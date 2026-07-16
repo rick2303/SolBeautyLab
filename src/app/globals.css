@@ -1,0 +1,287 @@
+@import "tailwindcss";
+
+@theme {
+  --color-cream: #faf6ef;
+  --color-card: #fffdf9;
+  --color-line: #f0e8d9;
+  --color-line-2: #efe6d6;
+  --color-line-3: #f4ecdd;
+  --color-line-4: #f6efe2;
+  --color-gold: #c9a24b;
+  --color-gold-dark: #8a6526;
+  --color-gold-deep: #7a5a1f;
+  --color-gold-light: #e4c97e;
+  --color-gold-pale: #f4e7c9;
+  --color-ink: #2b2622;
+  --color-body: #6f6659;
+  --color-warm: #5a4e3c;
+  --color-muted: #9a9082;
+  --color-subtle: #a89c86;
+  --color-faint: #b3a893;
+  --color-sand: #c6b89e;
+  --color-tan: #f2ece0;
+  --color-cream-deep: #f7efe0;
+  --color-espresso: #221d18;
+  --color-input: #e5dccb;
+  --color-chip-border: #e0cfa6;
+
+  --font-serif: var(--font-cormorant), Georgia, serif;
+  --font-sans: var(--font-jost), system-ui, sans-serif;
+  --font-script: var(--font-pinyon), cursive;
+}
+
+body {
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-thumb {
+  background: #e0d4bd;
+  border-radius: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- Micro-interacciones globales ---------- */
+button {
+  transition:
+    transform 0.15s ease,
+    opacity 0.2s ease,
+    box-shadow 0.25s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    filter 0.2s ease;
+}
+button:not(:disabled):hover {
+  filter: brightness(1.03);
+}
+button:not(:disabled):active {
+  transform: scale(0.96);
+}
+input,
+select,
+textarea {
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--color-gold);
+  box-shadow: 0 0 0 3px rgba(201, 162, 75, 0.15);
+}
+a {
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+/* ---------- Gradientes de marca ---------- */
+.grad-gold {
+  background: linear-gradient(135deg, #c9a24b, #8a6526);
+}
+.grad-gold-rev {
+  background: linear-gradient(135deg, #8a6526, #c9a24b);
+}
+.grad-gold-soft {
+  background: linear-gradient(135deg, #f4e7c9, #faf2df);
+}
+.grad-dark {
+  background: linear-gradient(135deg, #221d18, #3a3024);
+}
+.grad-bar {
+  background: linear-gradient(90deg, #c9a24b, #8a6526);
+}
+.text-gold-grad {
+  background: linear-gradient(135deg, #8a6526, #e4c97e 45%, #b0863c);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.text-gold-grad-dark {
+  background: linear-gradient(135deg, #e4c97e, #f6ead0 45%, #c9a24b);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ---------- Overlay de modales ---------- */
+.modal-overlay {
+  background: rgba(43, 38, 34, 0.45);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+/* ---------- Animaciones ---------- */
+@keyframes solFade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes solPage {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes solScale {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes solOverlay {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes solSlideRight {
+  from {
+    opacity: 0.3;
+    transform: translateX(80px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes solSlideLeft {
+  from {
+    opacity: 0.3;
+    transform: translateX(-80px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes solToast {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 18px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+@keyframes solShake {
+  10%,
+  90% {
+    transform: translateX(-1px);
+  }
+  20%,
+  80% {
+    transform: translateX(2px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-3px);
+  }
+  40%,
+  60% {
+    transform: translateX(3px);
+  }
+}
+@keyframes solSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.anim-fade {
+  animation: solFade 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.anim-page {
+  animation: solPage 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.anim-scale {
+  animation: solScale 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.anim-overlay {
+  animation: solOverlay 0.25s ease both;
+}
+.anim-slide-right {
+  animation: solSlideRight 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.anim-slide-left {
+  animation: solSlideLeft 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.anim-toast {
+  animation: solToast 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.anim-shake {
+  animation: solShake 0.45s ease both;
+}
+
+/* Spinner para estados de guardado */
+.spinner {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: solSpin 0.7s linear infinite;
+  vertical-align: -2px;
+}
+.spinner-gold {
+  border-color: rgba(138, 101, 38, 0.25);
+  border-top-color: #8a6526;
+}
+
+/* Skeleton shimmer */
+@keyframes solShimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.skeleton {
+  border-radius: 10px;
+  background: linear-gradient(90deg, #f2ece0 25%, #faf4e8 50%, #f2ece0 75%);
+  background-size: 200% 100%;
+  animation: solShimmer 1.4s linear infinite;
+}
+
+/* Entrada escalonada para listas/cards */
+.stagger > * {
+  animation: solFade 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.stagger > *:nth-child(2) { animation-delay: 0.06s; }
+.stagger > *:nth-child(3) { animation-delay: 0.1s; }
+.stagger > *:nth-child(4) { animation-delay: 0.14s; }
+.stagger > *:nth-child(5) { animation-delay: 0.18s; }
+.stagger > *:nth-child(6) { animation-delay: 0.22s; }
+.stagger > *:nth-child(7) { animation-delay: 0.26s; }
+.stagger > *:nth-child(8) { animation-delay: 0.3s; }
+.stagger > *:nth-child(n + 9) { animation-delay: 0.34s; }
