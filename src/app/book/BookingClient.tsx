@@ -5,9 +5,9 @@ import { SolLogo } from "@/components/SolLogo";
 import { inputCls } from "@/components/ui/Modal";
 import { LangToggle, useLocalLang } from "@/components/LangProvider";
 import { fmtMoney, dateKey } from "@/lib/format";
+import { effectiveDayHours, DOW_KEYS } from "@/lib/schedule";
 import { createBooking, getBusy, type BookingData } from "./actions";
 
-const DOW_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 const SLOT_STEP_MIN = 30;
 
 const STEP_TITLES = [
@@ -48,18 +48,23 @@ export function BookingClient({ data }: { data: BookingData }) {
   const tech = data.staff.find((t) => t.id === staffId);
   const locale = lang === "es" ? "es" : "en-US";
 
-  // Próximos 14 días (abiertos según horario)
+  // Próximos 14 días (abiertos según horario del salón ∩ horario del técnico)
   const days = useMemo(() => {
     const out: { date: Date; open: boolean }[] = [];
     for (let i = 0; i < 14; i++) {
       const d = new Date();
       d.setHours(0, 0, 0, 0);
       d.setDate(d.getDate() + i);
-      const hours = data.openingHours[DOW_KEYS[d.getDay()]];
+      const dow = DOW_KEYS[d.getDay()];
+      const hours = effectiveDayHours(
+        data.openingHours[dow] ?? null,
+        tech?.work_hours,
+        dow
+      );
       out.push({ date: d, open: !!hours });
     }
     return out;
-  }, [data.openingHours]);
+  }, [data.openingHours, tech]);
 
   // Cargar ocupación del técnico al elegir día
   useEffect(() => {
@@ -74,10 +79,15 @@ export function BookingClient({ data }: { data: BookingData }) {
       .finally(() => setLoadingSlots(false));
   }, [staffId, day]);
 
-  // Slots disponibles del día
+  // Slots disponibles del día (dentro del horario efectivo del técnico)
   const slots = useMemo(() => {
     if (!day || !service) return [];
-    const hours = data.openingHours[DOW_KEYS[day.getDay()]];
+    const dow = DOW_KEYS[day.getDay()];
+    const hours = effectiveDayHours(
+      data.openingHours[dow] ?? null,
+      tech?.work_hours,
+      dow
+    );
     if (!hours) return [];
     const [openH, openM] = hours[0].split(":").map(Number);
     const [closeH, closeM] = hours[1].split(":").map(Number);
@@ -101,7 +111,7 @@ export function BookingClient({ data }: { data: BookingData }) {
       if (!taken) out.push(new Date(t));
     }
     return out;
-  }, [day, service, busy, data.openingHours]);
+  }, [day, service, busy, data.openingHours, tech]);
 
   function goTo(s: number) {
     setError("");

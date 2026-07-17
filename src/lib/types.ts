@@ -31,6 +31,9 @@ export type ReminderType =
 
 export type MessageChannel = "sms" | "whatsapp";
 
+/** Horario semanal: llave = dow ("sun".."sat"), valor = [inicio, fin] o null (cerrado) */
+export type WorkHours = Record<string, [string, string] | null>;
+
 export interface Profile {
   id: string;
   full_name: string;
@@ -39,6 +42,7 @@ export interface Profile {
   specialty: string | null;
   is_active: boolean;
   modules: string[] | null; // null = módulos por defecto del rol
+  work_hours: WorkHours | null; // null = aplican las horas del salón
   created_at: string;
 }
 

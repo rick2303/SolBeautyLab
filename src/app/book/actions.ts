@@ -1,6 +1,9 @@
 "use server";
 
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { effectiveDayHours, toMin } from "@/lib/schedule";
+import { SALON_TZ } from "@/lib/tz";
+import type { WorkHours } from "@/lib/types";
 
 function admin() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -19,7 +22,12 @@ export interface BookingData {
     price: number;
     duration_min: number;
   }[];
-  staff: { id: string; full_name: string; specialty: string | null }[];
+  staff: {
+    id: string;
+    full_name: string;
+    specialty: string | null;
+    work_hours: WorkHours | null;
+  }[];
   openingHours: Record<string, [string, string] | null>;
   salonName: string;
 }
@@ -36,7 +44,7 @@ export async function getBookingData(): Promise<BookingData> {
         .order("name"),
       db
         .from("profiles")
-        .select("id, full_name, specialty")
+        .select("id, full_name, specialty, work_hours")
         .eq("is_active", true)
         .order("full_name"),
       db.from("salon_settings").select("salon_name, opening_hours").limit(1),
@@ -73,6 +81,21 @@ export async function getBusy(
       new Date(a.starts_at).getTime() + a.duration_min * 60000
     ).toISOString(),
   }));
+}
+
+/** Día de semana + minutos desde medianoche de un instante, en hora del salón */
+function wallMinutes(d: Date): { dow: string; min: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: SALON_TZ,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const dow = get("weekday").toLowerCase().slice(0, 3);
+  const h = Number(get("hour")) % 24;
+  return { dow, min: h * 60 + Number(get("minute")) };
 }
 
 export interface BookingInput {
@@ -133,6 +156,29 @@ export async function createBooking(
     return { error: "That time is no longer available" };
   }
   const ends = new Date(starts.getTime() + service.duration_min * 60000);
+
+  // Validar que la cita caiga dentro del horario efectivo del técnico
+  // (horas del salón ∩ horario propio), en hora de pared del salón
+  const [{ data: staffProfile }, { data: settingsRows }] = await Promise.all([
+    db.from("profiles").select("work_hours").eq("id", input.staffId).single(),
+    db.from("salon_settings").select("opening_hours").limit(1),
+  ]);
+  if (!staffProfile) return { error: "Technician not found" };
+  const salonHours =
+    (settingsRows?.[0]?.opening_hours as WorkHours | null) ?? {};
+  const wall = wallMinutes(starts);
+  const win = effectiveDayHours(
+    salonHours[wall.dow] ?? null,
+    staffProfile.work_hours as WorkHours | null,
+    wall.dow
+  );
+  if (
+    !win ||
+    wall.min < toMin(win[0]) ||
+    wall.min + service.duration_min > toMin(win[1])
+  ) {
+    return { error: "That time is outside the technician's working hours" };
+  }
 
   // Re-chequear conflicto en el servidor (evita doble reserva simultánea)
   const busy = await getBusy(

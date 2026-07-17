@@ -36,7 +36,9 @@ export async function updateSession(request: NextRequest) {
   const isPublic =
     isLogin ||
     pathname.startsWith("/book") ||
-    pathname.startsWith("/reset-password");
+    pathname.startsWith("/reset-password") ||
+    // Rutas de cron: protegidas por CRON_SECRET (Bearer), no por sesión
+    pathname.startsWith("/api/cron/");
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();

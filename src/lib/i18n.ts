@@ -292,4 +292,41 @@ export const ES: Record<string, string> = {
   "We'll send you a reminder before your appointment ✨":
     "Te enviaremos un recordatorio antes de tu cita ✨",
   "Book another appointment": "Agendar otra cita",
+
+  // ---- Inspo ----
+  Inspo: "Inspo",
+  "Prep your work — inspiration photos per appointment":
+    "Prepara tu trabajo — fotos de inspiración por cita",
+  "No appointments in the last 30 days or coming up":
+    "Sin citas en los últimos 30 días ni próximas",
+  "Inspiration board": "Tablero de inspiración",
+  "No inspiration yet — add ideas for this appointment":
+    "Aún no hay inspiración — agrega ideas para esta cita",
+  "Max 5 photos per appointment": "Máximo 5 fotos por cita",
+  photos: "fotos",
+
+  // ---- Schedule ----
+  Schedule: "Horario",
+  "Your working hours — clients can only book inside them":
+    "Tu horario de trabajo — solo se puede reservar dentro de él",
+  "Team schedules": "Horarios del equipo",
+  "My schedule": "Mi horario",
+  "Using salon hours": "Usa las horas del salón",
+  "Custom schedule": "Horario propio",
+  "Use salon hours": "Usar horas del salón",
+  "Set custom schedule": "Definir horario propio",
+  "Save schedule": "Guardar horario",
+  "Schedule saved": "Horario guardado",
+  Closed: "Cerrado",
+  "Salon:": "Salón:",
+  "Edit schedule": "Editar horario",
+  "Start must be before end": "El inicio debe ser antes del fin",
+  "Outside working hours": "Fuera del horario de trabajo",
+  Monday: "Lunes",
+  Tuesday: "Martes",
+  Wednesday: "Miércoles",
+  Thursday: "Jueves",
+  Friday: "Viernes",
+  Saturday: "Sábado",
+  Sunday: "Domingo",
 };

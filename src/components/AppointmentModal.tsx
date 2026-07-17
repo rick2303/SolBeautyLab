@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Modal, Field, inputCls, PrimaryBtn, GhostBtn } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toaster";
 import { fmtMoney } from "@/lib/format";
-import type { Client, Profile, Service } from "@/lib/types";
+import { effectiveDayHours, toMin, DOW_KEYS } from "@/lib/schedule";
+import type { Client, Profile, Service, WorkHours } from "@/lib/types";
 
 export function AppointmentModal({
   clients,
@@ -30,8 +31,44 @@ export function AppointmentModal({
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState("10:00");
   const [saving, setSaving] = useState(false);
+  const [salonHours, setSalonHours] = useState<WorkHours | null>(null);
+  const [techHours, setTechHours] = useState<WorkHours | null>(null);
   const toast = useToast();
   const router = useRouter();
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("salon_settings")
+      .select("opening_hours")
+      .limit(1)
+      .then(({ data }) => setSalonHours((data?.[0]?.opening_hours as WorkHours) ?? {}));
+  }, []);
+
+  useEffect(() => {
+    if (!staffId) return;
+    const supabase = createClient();
+    supabase
+      .from("profiles")
+      .select("work_hours")
+      .eq("id", staffId)
+      .single()
+      .then(({ data }) => setTechHours((data?.work_hours as WorkHours | null) ?? null));
+  }, [staffId]);
+
+  // Aviso (no bloqueo): la cita cae fuera del horario del técnico
+  const outsideHours = useMemo(() => {
+    if (!salonHours) return false;
+    const service = services.find((s) => s.id === serviceId);
+    const d = new Date(`${date}T${time}:00`);
+    if (isNaN(d.getTime())) return false;
+    const dow = DOW_KEYS[d.getDay()];
+    const win = effectiveDayHours(salonHours[dow] ?? null, techHours, dow);
+    if (!win) return true;
+    const startMin = d.getHours() * 60 + d.getMinutes();
+    const endMin = startMin + (service?.duration_min ?? 0);
+    return startMin < toMin(win[0]) || endMin > toMin(win[1]);
+  }, [salonHours, techHours, date, time, serviceId, services]);
 
   async function save() {
     const service = services.find((s) => s.id === serviceId);
@@ -167,6 +204,12 @@ export function AppointmentModal({
           </Field>
         </div>
       </div>
+      {outsideHours && (
+        <div className="rounded-[10px] border border-[#e4c97e] bg-[#fdf7e8] px-3.5 py-2.5 text-[11.5px] leading-relaxed text-[#8a6526]">
+          ⚠ Outside this technician&apos;s working hours — you can still book
+          it, but online clients can&apos;t
+        </div>
+      )}
     </Modal>
   );
 }
