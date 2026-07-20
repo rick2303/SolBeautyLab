@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 export function ModalShell({
@@ -16,6 +16,21 @@ export function ModalShell({
 }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  // Solo cerrar si el gesto empieza Y termina en el fondo. Si no, al
+  // seleccionar texto y soltar el botón fuera del modal, ese arrastre
+  // contaba como clic en el fondo y lo cerraba a media selección.
+  const startedOnBackdrop = useRef(false);
+  const backdropProps = {
+    onPointerDown: (e: React.PointerEvent) => {
+      startedOnBackdrop.current = e.target === e.currentTarget;
+    },
+    onPointerUp: (e: React.PointerEvent) => {
+      const closes = startedOnBackdrop.current && e.target === e.currentTarget;
+      startedOnBackdrop.current = false;
+      if (closes) onClose();
+    },
+  };
 
   // Cerrar con Escape + bloquear scroll del body
   useEffect(() => {
@@ -35,11 +50,10 @@ export function ModalShell({
   if (align === "right") {
     return createPortal(
       <div
-        onClick={onClose}
+        {...backdropProps}
         className="anim-overlay modal-overlay fixed inset-0 z-50 flex justify-end"
       >
         <div
-          onClick={(e) => e.stopPropagation()}
           className="anim-slide-right h-full max-w-[92vw] overflow-y-auto bg-cream"
           style={{ width, boxShadow: "-20px 0 60px -20px rgba(60,40,10,.4)" }}
         >
@@ -52,12 +66,15 @@ export function ModalShell({
 
   return createPortal(
     <div
-      onClick={onClose}
+      {...backdropProps}
       className="anim-overlay modal-overlay fixed inset-0 z-50 overflow-y-auto"
     >
-      <div className="flex min-h-full items-center justify-center p-4 sm:p-6">
+      {/* El wrapper de centrado también cuenta como fondo clicable */}
+      <div
+        {...backdropProps}
+        className="flex min-h-full items-center justify-center p-4 sm:p-6"
+      >
         <div
-          onClick={(e) => e.stopPropagation()}
           className="anim-scale flex max-h-[calc(100dvh-32px)] w-full flex-col overflow-hidden rounded-[20px] bg-cream"
           style={{
             maxWidth: width,

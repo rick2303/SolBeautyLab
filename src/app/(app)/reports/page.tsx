@@ -7,9 +7,17 @@ import { monthKeyTz, monthRangeTz, todayKeyTz } from "@/lib/tz";
 import { getLang } from "@/lib/lang-server";
 import { tr } from "@/lib/i18n";
 import { ExportPdf } from "./ExportPdf";
+import { PeriodTabs } from "./PeriodTabs";
+import { asPeriod, rangeLabel, reportRange } from "./range";
 import type { Profile } from "@/lib/types";
 
-export default async function ReportsPage() {
+export const metadata = { title: "Reports" };
+
+export default async function ReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>;
+}) {
   const session = await getSessionProfile();
   if (!session?.profile) redirect("/login");
   if (!canAccess(session.profile, "reports")) redirect("/dashboard");
@@ -17,6 +25,12 @@ export default async function ReportsPage() {
   const supabase = await createClient();
   const lang = await getLang();
   const t = (s: string) => tr(lang, s);
+  const locale = lang === "es" ? "es" : "en-US";
+
+  const period = asPeriod((await searchParams).period);
+  const range = reportRange(period);
+  const periodLabel = rangeLabel(period, locale);
+
   const [cy, cm] = todayKeyTz().split("-").map(Number);
   const sixMonthsAgo = new Date(
     monthRangeTz(new Date(Date.UTC(cy, cm - 1 - 5, 15))).from
@@ -27,8 +41,9 @@ export default async function ReportsPage() {
     { data: exps },
     { data: appts },
     { data: team },
-    { data: clientVisits },
+    { data: doneHistory },
   ] = await Promise.all([
+    // Gráfico de 6 meses: siempre 6 meses, independiente del filtro
     supabase
       .from("payments")
       .select("amount, paid_at")
@@ -37,12 +52,20 @@ export default async function ReportsPage() {
       .from("expenses")
       .select("amount, expense_date")
       .gte("expense_date", sixMonthsAgo.toISOString().slice(0, 10)),
+    // Citas del período seleccionado
     supabase
       .from("appointments")
       .select("price, status, staff_id, services(name)")
-      .gte("starts_at", sixMonthsAgo.toISOString()),
+      .gte("starts_at", range.from)
+      .lt("starts_at", range.to),
     supabase.from("profiles").select("*").eq("is_active", true),
-    supabase.from("client_stats").select("visits"),
+    // Historial de completadas hasta el fin del período: sirve para saber si
+    // cada clienta atendida ya había venido antes (recurrente) o es nueva
+    supabase
+      .from("appointments")
+      .select("client_id, starts_at")
+      .eq("status", "completed")
+      .lt("starts_at", range.to),
   ]);
 
   // Barras rev vs exp por mes (mes según el reloj del salón)
@@ -51,7 +74,7 @@ export default async function ReportsPage() {
     const d = new Date(Date.UTC(cy, cm - 1 - i, 1));
     months.push({
       key: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`,
-      label: d.toLocaleDateString(lang === "es" ? "es" : "en-US", {
+      label: d.toLocaleDateString(locale, {
         month: "short",
         timeZone: "UTC",
       }),
@@ -61,18 +84,16 @@ export default async function ReportsPage() {
   }
   const mIdx = new Map(months.map((m, i) => [m.key, i]));
   for (const p of pays ?? []) {
-    const k = monthKeyTz(p.paid_at);
-    const i = mIdx.get(k);
+    const i = mIdx.get(monthKeyTz(p.paid_at));
     if (i !== undefined) months[i].rev += Number(p.amount);
   }
   for (const x of exps ?? []) {
-    const k = x.expense_date.slice(0, 7);
-    const i = mIdx.get(k);
+    const i = mIdx.get(x.expense_date.slice(0, 7));
     if (i !== undefined) months[i].exp += Number(x.amount);
   }
   const maxBar = Math.max(1, ...months.map((m) => Math.max(m.rev, m.exp)));
 
-  // Servicios más pedidos (completadas, 6 meses)
+  // Servicios más pedidos (completadas del período)
   const completed = (appts ?? []).filter((a) => a.status === "completed");
   const svcCounts = new Map<string, number>();
   for (const a of completed) {
@@ -85,21 +106,30 @@ export default async function ReportsPage() {
     .slice(0, 5);
   const maxSvc = topServices[0]?.[1] ?? 1;
 
-  // Returning vs new: returning = 2+ visitas completadas
-  const totalClients = clientVisits?.length ?? 0;
-  const returningCount = (clientVisits ?? []).filter(
-    (r) => Number(r.visits) >= 2
-  ).length;
+  // Recurrentes vs nuevas: de las clientas atendidas en el período, cuáles ya
+  // habían venido antes. (Antes se medía sobre TODA la cartera histórica, así
+  // que el número no cambiaba nunca ni respondía al filtro.)
+  const before = new Set<string>();
+  const inPeriod = new Set<string>();
+  for (const a of doneHistory ?? []) {
+    if (!a.client_id) continue;
+    if (a.starts_at < range.from) before.add(a.client_id);
+    else inPeriod.add(a.client_id);
+  }
+  const returningCount = [...inPeriod].filter((c) => before.has(c)).length;
+  const servedCount = inPeriod.size;
+  const newCount = servedCount - returningCount;
   const returningPct =
-    totalClients > 0 ? Math.round((returningCount / totalClients) * 100) : 0;
+    servedCount > 0 ? Math.round((returningCount / servedCount) * 100) : 0;
 
-  // Performance por empleado
+  // Performance por empleado (período)
   const perf = ((team ?? []) as Profile[])
-    .map((t) => {
+    .map((m) => {
       const revenue = completed
-        .filter((a) => a.staff_id === t.id)
+        .filter((a) => a.staff_id === m.id)
         .reduce((s, a) => s + Number(a.price), 0);
-      return { t, revenue };
+      const count = completed.filter((a) => a.staff_id === m.id).length;
+      return { m, revenue, count };
     })
     .sort((a, b) => b.revenue - a.revenue);
   const maxPerf = perf[0]?.revenue || 1;
@@ -110,7 +140,10 @@ export default async function ReportsPage() {
         title={t("Reports")}
         sub={t("Revenue, services and client insights")}
       >
-        <ExportPdf />
+        <div className="flex flex-wrap items-center gap-2">
+          <PeriodTabs period={period} />
+          <ExportPdf period={period} />
+        </div>
       </PageHeader>
 
       <div className="mb-[18px] grid grid-cols-1 gap-[18px] lg:grid-cols-2">
@@ -157,13 +190,14 @@ export default async function ReportsPage() {
         </Card>
 
         <Card className="p-[18px]">
-          <div className="mb-3.5 font-serif text-lg font-semibold">
+          <div className="font-serif text-lg font-semibold">
             {t("Most requested services")}
           </div>
+          <div className="mb-3.5 text-[11px] text-muted">{periodLabel}</div>
           <div className="flex flex-col gap-3">
             {topServices.length === 0 && (
               <div className="text-[12px] text-faint">
-                {t("No completed appointments yet")}
+                {t("No completed appointments in this period")}
               </div>
             )}
             {topServices.map(([name, count]) => (
@@ -186,50 +220,68 @@ export default async function ReportsPage() {
 
       <div className="grid grid-cols-1 gap-[18px] lg:grid-cols-[1fr_1.6fr]">
         <Card className="p-[18px]">
-          <div className="mb-3.5 font-serif text-lg font-semibold">
+          <div className="font-serif text-lg font-semibold">
             {t("Returning vs new")}
           </div>
-          <div className="flex items-center gap-5">
-            <div
-              className="flex h-[110px] w-[110px] items-center justify-center rounded-full"
-              style={{
-                background: `conic-gradient(#8a6526 0 ${returningPct}%, #e4d5b4 ${returningPct}% 100%)`,
-              }}
-            >
-              <div className="flex h-[66px] w-[66px] items-center justify-center rounded-full bg-card font-serif text-xl font-semibold">
-                {returningPct}%
+          <div className="mb-3.5 text-[11px] text-muted">{periodLabel}</div>
+          {servedCount === 0 ? (
+            <div className="py-6 text-center text-[12px] text-faint">
+              {t("No clients served in this period")}
+            </div>
+          ) : (
+            <div className="flex items-center gap-5">
+              <div
+                className="flex h-[110px] w-[110px] items-center justify-center rounded-full"
+                style={{
+                  background: `conic-gradient(#8a6526 0 ${returningPct}%, #e4d5b4 ${returningPct}% 100%)`,
+                }}
+              >
+                <div className="flex h-[66px] w-[66px] items-center justify-center rounded-full bg-card font-serif text-xl font-semibold">
+                  {returningPct}%
+                </div>
+              </div>
+              <div className="flex flex-col gap-2 text-xs text-body">
+                <span className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-[3px] bg-gold-dark" />
+                  {t("Returning")} · {returningCount}
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-[3px] bg-[#e4d5b4]" />
+                  {t("New")} · {newCount}
+                </span>
+                <span className="mt-1 text-[11px] text-muted">
+                  {servedCount} {t("clients served")}
+                </span>
               </div>
             </div>
-            <div className="flex flex-col gap-2 text-xs text-body">
-              <span className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-[3px] bg-gold-dark" />
-                {t("Returning")} · {returningPct}%
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-[3px] bg-[#e4d5b4]" />
-                {t("New")} · {100 - returningPct}%
-              </span>
-            </div>
-          </div>
+          )}
         </Card>
 
         <Card className="p-[18px]">
-          <div className="mb-3.5 font-serif text-lg font-semibold">
+          <div className="font-serif text-lg font-semibold">
             {t("Employee performance")}
           </div>
-          {perf.map(({ t, revenue }) => (
+          <div className="mb-3.5 text-[11px] text-muted">{periodLabel}</div>
+          {perf.map(({ m, revenue, count }) => (
             <div
-              key={t.id}
+              key={m.id}
               className="flex items-center gap-3 border-t border-line-4 py-[9px] first:border-t-0"
             >
               <div
                 className="flex h-[34px] w-[34px] items-center justify-center rounded-full text-[12.5px] text-white"
-                style={{ background: avatarFor(t.id) }}
+                style={{ background: avatarFor(m.id) }}
               >
-                {initialsOf(t.full_name)}
+                {initialsOf(m.full_name)}
               </div>
               <div className="flex-1">
-                <div className="text-[12.5px] font-medium">{t.full_name}</div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[12.5px] font-medium">
+                    {m.full_name}
+                  </span>
+                  <span className="text-[10.5px] text-faint">
+                    {count} {t("services")}
+                  </span>
+                </div>
                 <div className="mt-[5px] h-[5px] rounded-[3px] bg-line">
                   <div
                     className="grad-bar h-[5px] rounded-[3px]"

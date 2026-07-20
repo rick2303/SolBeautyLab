@@ -195,13 +195,11 @@ create table message_templates (
 
 insert into message_templates (type, channel, language, body) values
   ('appointment_reminder', 'sms', 'es',
-   'Hola {{client_name}} ✨ Te recordamos tu cita en Sol Beauty Lab: {{service}} con {{staff}}, {{date}} a las {{time}}. Confirma aquí: {{confirm_url}}'),
-  ('appointment_reminder', 'whatsapp', 'es',
-   'Hola {{client_name}} ✨ Te recordamos tu cita en Sol Beauty Lab: {{service}} con {{staff}}, {{date}} a las {{time}}. Confirma aquí: {{confirm_url}}'),
-  ('confirmation_request', 'whatsapp', 'es',
-   'Hola {{client_name}}, ¿nos confirmas tu cita del {{date}} a las {{time}} ({{service}})? Toca aquí: {{confirm_url}}'),
-  ('thank_you', 'whatsapp', 'es',
-   'Gracias por tu visita, {{client_name}} 💛 Te esperamos pronto en Sol Beauty Lab. Reserva tu próxima cita: {{confirm_url}}');
+   'Hola {{client_name}}, te recordamos tu cita en Sol Beauty Lab: {{service}} con {{staff}} el {{date}} a las {{time}}. Confirma o reagenda aquí: {{confirm_url}}'),
+  ('confirmation_request', 'sms', 'es',
+   'Hola {{client_name}}, ¿nos confirmas tu cita en Sol Beauty Lab del {{date}} a las {{time}} ({{service}})? Toca aquí para confirmar: {{confirm_url}}'),
+  ('thank_you', 'sms', 'es',
+   'Gracias por tu visita, {{client_name}}. Fue un gusto atenderte en Sol Beauty Lab. Reserva tu próxima cita cuando gustes: {{confirm_url}}');
 
 -- ============================================================
 -- 10. MESSAGES — cola + log de envíos (SMS / WhatsApp)

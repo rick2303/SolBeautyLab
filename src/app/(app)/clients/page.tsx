@@ -1,15 +1,19 @@
 import { redirect } from "next/navigation";
 import { createClient, getSessionProfile } from "@/lib/supabase/server";
+import { canAccess } from "@/lib/roles";
 import { PageHeader } from "@/components/PageHeader";
 import { getLang } from "@/lib/lang-server";
 import { tr } from "@/lib/i18n";
 import { ClientsClient } from "./ClientsClient";
 import type { Client, ClientStats } from "@/lib/types";
 
+export const metadata = { title: "Clients" };
+
 export default async function ClientsPage() {
   const session = await getSessionProfile();
   if (!session?.profile) redirect("/login");
   const me = session.profile;
+  if (!canAccess(me, "clients")) redirect("/dashboard");
   const supabase = await createClient();
 
   const [{ data: clients }, { data: stats }, { data: serviceOpts }, { data: staffOpts }] =

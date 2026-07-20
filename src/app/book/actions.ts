@@ -1,7 +1,13 @@
 "use server";
 
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import {
+  parsePhoneNumberFromString,
+  isSupportedCountry,
+  type CountryCode,
+} from "libphonenumber-js";
 import { effectiveDayHours, toMin } from "@/lib/schedule";
+import { onAppointmentCreated } from "@/lib/messaging";
 import { SALON_TZ } from "@/lib/tz";
 import type { WorkHours } from "@/lib/types";
 
@@ -14,7 +20,13 @@ function admin() {
 }
 
 export interface BookingData {
-  categories: { id: string; name: string; sort_order: number }[];
+  categories: {
+    id: string;
+    name: string;
+    sort_order: number;
+    icon: string | null;
+    hide_prices?: boolean | null;
+  }[];
   services: {
     id: string;
     category_id: string;
@@ -25,18 +37,26 @@ export interface BookingData {
   staff: {
     id: string;
     full_name: string;
-    specialty: string | null;
+    specialties: string[] | null;
     work_hours: WorkHours | null;
   }[];
   openingHours: Record<string, [string, string] | null>;
   salonName: string;
+  defaultCountry: string; // ISO 3166-1 alpha-2, configurable en salon_settings
+  contact: {
+    phone: string | null;
+    whatsapp: string | null;
+    instagram: string | null;
+    address: string | null;
+  };
 }
 
 export async function getBookingData(): Promise<BookingData> {
   const db = admin();
   const [{ data: categories }, { data: services }, { data: staff }, { data: settings }] =
     await Promise.all([
-      db.from("service_categories").select("id, name, sort_order").order("sort_order"),
+      // select("*") + filtro en JS: no falla si la migración 014 aún no corre
+      db.from("service_categories").select("*").order("sort_order"),
       db
         .from("services")
         .select("id, category_id, name, price, duration_min")
@@ -44,19 +64,30 @@ export async function getBookingData(): Promise<BookingData> {
         .order("name"),
       db
         .from("profiles")
-        .select("id, full_name, specialty, work_hours")
+        .select("id, full_name, specialties, work_hours")
         .eq("is_active", true)
         .order("full_name"),
-      db.from("salon_settings").select("salon_name, opening_hours").limit(1),
+      // select("*"): no falla si la migración 015 aún no corre
+      db.from("salon_settings").select("*").limit(1),
     ]);
 
   return {
-    categories: categories ?? [],
+    // Las categorías desactivadas no aparecen en el booking
+    categories: (categories ?? []).filter(
+      (c: { is_active?: boolean }) => c.is_active !== false
+    ),
     services: services ?? [],
     staff: staff ?? [],
     openingHours:
       (settings?.[0]?.opening_hours as BookingData["openingHours"]) ?? {},
     salonName: settings?.[0]?.salon_name ?? "Sol Beauty Lab",
+    defaultCountry: settings?.[0]?.default_country ?? "US",
+    contact: {
+      phone: settings?.[0]?.phone ?? null,
+      whatsapp: settings?.[0]?.whatsapp ?? null,
+      instagram: settings?.[0]?.instagram ?? null,
+      address: settings?.[0]?.address ?? null,
+    },
   };
 }
 
@@ -116,22 +147,35 @@ export async function createBooking(
     return { ok: true }; // fingir éxito, no crear nada
   }
 
+  const db = admin();
+
+  // País por defecto del salón (salon_settings.default_country, migración 015)
+  const { data: settingsRows } = await db
+    .from("salon_settings")
+    .select("*")
+    .limit(1);
+  const rawCountry = settingsRows?.[0]?.default_country ?? "US";
+  const defaultCountry: CountryCode = isSupportedCountry(rawCountry)
+    ? rawCountry
+    : "US";
+
   const name = input.fullName.trim();
-  const phone = input.phone.trim();
-  const phoneDigits = phone.replace(/\D/g, "");
-  if (
-    !name ||
-    name.length > 80 ||
-    phoneDigits.length < 7 ||
-    phoneDigits.length > 15
-  ) {
+  // Validación real de teléfono (no solo dígitos), según el país del salón
+  const parsedPhone = parsePhoneNumberFromString(
+    input.phone.trim(),
+    defaultCountry
+  );
+  if (!name || name.length > 80 || parsedPhone?.isValid() !== true) {
     return { error: "Please enter your name and a valid phone number" };
   }
-  if (input.email && input.email.length > 120) {
+  const phone = parsedPhone.number; // se guarda normalizado en E.164
+  if (
+    input.email &&
+    (input.email.length > 120 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(input.email.trim()))
+  ) {
     return { error: "Invalid email" };
   }
-
-  const db = admin();
 
   // Anti-spam global: máx. 15 reservas online en 10 minutos
   const tenMinAgo = new Date(Date.now() - 10 * 60000).toISOString();
@@ -159,10 +203,11 @@ export async function createBooking(
 
   // Validar que la cita caiga dentro del horario efectivo del técnico
   // (horas del salón ∩ horario propio), en hora de pared del salón
-  const [{ data: staffProfile }, { data: settingsRows }] = await Promise.all([
-    db.from("profiles").select("work_hours").eq("id", input.staffId).single(),
-    db.from("salon_settings").select("opening_hours").limit(1),
-  ]);
+  const { data: staffProfile } = await db
+    .from("profiles")
+    .select("work_hours")
+    .eq("id", input.staffId)
+    .single();
   if (!staffProfile) return { error: "Technician not found" };
   const salonHours =
     (settingsRows?.[0]?.opening_hours as WorkHours | null) ?? {};
@@ -255,16 +300,30 @@ export async function createBooking(
     };
   }
 
-  const { error } = await db.from("appointments").insert({
-    client_id: clientId,
-    service_id: service.id,
-    staff_id: input.staffId,
-    starts_at: starts.toISOString(),
-    duration_min: service.duration_min,
-    price: service.price,
-    status: "scheduled",
-  });
-  if (error) return { error: "Could not create the appointment" };
+  // Reserva en línea → la cita nace CONFIRMADA (la clienta ya la solicitó)
+  const { data: created, error } = await db
+    .from("appointments")
+    .insert({
+      client_id: clientId,
+      service_id: service.id,
+      staff_id: input.staffId,
+      starts_at: starts.toISOString(),
+      duration_min: service.duration_min,
+      price: service.price,
+      status: "confirmed",
+    })
+    .select("id")
+    .single();
+  if (error || !created) return { error: "Could not create the appointment" };
+
+  // Avisa al staff (SMS + push). Sin pedir confirmación: ya está confirmada.
+  // El recordatorio 1h-antes lo envía el cron. Nada de esto puede fallar
+  // el booking.
+  try {
+    await onAppointmentCreated(created.id, { requestConfirmation: false });
+  } catch {
+    // ignorar: el booking ya quedó guardado
+  }
 
   return { ok: true };
 }

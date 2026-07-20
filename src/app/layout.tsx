@@ -21,7 +21,10 @@ const pinyon = Pinyon_Script({
 });
 
 export const metadata: Metadata = {
-  title: "Sol Beauty Lab",
+  title: {
+    default: "Sol Beauty Lab",
+    template: "%s · Sol Beauty Lab",
+  },
   description: "Studio management — Sol Beauty Lab",
 };
 

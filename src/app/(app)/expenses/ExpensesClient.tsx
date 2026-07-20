@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Modal, Field, inputCls, PrimaryBtn, GhostBtn } from "@/components/ui/Modal";
 import { Pagination, PAGE_SIZE } from "@/components/ui/Pagination";
 import { useToast } from "@/components/ui/Toaster";
+import { useLang } from "@/components/LangProvider";
 import { fmtDate, fmtMoney } from "@/lib/format";
 import type { Expense, ExpenseCategory, Profile } from "@/lib/types";
 
@@ -18,6 +19,8 @@ const CATS: { key: ExpenseCategory; label: string }[] = [
   { key: "other", label: "Other" },
 ];
 
+const CAT_LABEL = Object.fromEntries(CATS.map((c) => [c.key, c.label]));
+
 export function ExpensesClient({
   expenses,
   me,
@@ -27,23 +30,26 @@ export function ExpensesClient({
 }) {
   const [open, setOpen] = useState(false);
   const [page, setPage] = useState(0);
+  const { t } = useLang();
 
   const pageItems = expenses.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   return (
     <div className="rounded-2xl border border-line bg-card px-[18px] pb-3.5 pt-[18px]">
       <div className="mb-2 flex items-center justify-between">
-        <div className="font-serif text-lg font-semibold">Recent expenses</div>
+        <div className="font-serif text-lg font-semibold">
+          {t("Recent expenses")}
+        </div>
         <button
           onClick={() => setOpen(true)}
           className="grad-gold h-[34px] cursor-pointer rounded-[18px] border-none px-3.5 text-xs font-medium text-white"
         >
-          + Add expense
+          {t("+ Add expense")}
         </button>
       </div>
       {expenses.length === 0 && (
         <div className="py-8 text-center text-[12.5px] text-faint">
-          No expenses yet
+          {t("No expenses yet")}
         </div>
       )}
       {pageItems.map((x) => (
@@ -57,8 +63,8 @@ export function ExpensesClient({
               {fmtDate(x.expense_date)}
             </div>
           </div>
-          <span className="rounded-[20px] bg-tan px-2 py-[3px] text-[10px] capitalize text-gold-dark">
-            {x.category}
+          <span className="rounded-[20px] bg-tan px-2 py-[3px] text-[10px] text-gold-dark">
+            {t(CAT_LABEL[x.category] ?? x.category)}
           </span>
           <div className="w-[74px] text-right font-serif text-sm font-semibold">
             {fmtMoney(Number(x.amount))}
@@ -85,11 +91,12 @@ function AddExpenseModal({
   const [saving, setSaving] = useState(false);
   const toast = useToast();
   const router = useRouter();
+  const { t } = useLang();
 
   async function save() {
     const amt = parseFloat(amount.replace(/[^0-9.]/g, "")) || 0;
     if (!note.trim() || !amt) {
-      toast("Add description & amount");
+      toast(t("Add description & amount"));
       return;
     }
     setSaving(true);
@@ -103,41 +110,41 @@ function AddExpenseModal({
     });
     setSaving(false);
     if (error) {
-      toast("Could not save: " + error.message);
+      toast(t("Could not save:") + " " + error.message);
       return;
     }
-    toast("Expense added");
+    toast(t("Expense added"));
     onClose();
     router.refresh();
   }
 
   return (
     <Modal
-      title="Add expense"
+      title={t("Add expense")}
       onClose={onClose}
       width={420}
       footer={
         <>
           <GhostBtn onClick={onClose} className="flex-1">
-            Cancel
+            {t("Cancel")}
           </GhostBtn>
           <PrimaryBtn onClick={save} loading={saving} className="flex-[2]">
-            {saving ? "Saving…" : "Save expense"}
+            {saving ? t("Saving…") : t("Save expense")}
           </PrimaryBtn>
         </>
       }
     >
-      <Field label="Description">
+      <Field label={t("Description")}>
         <input
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="e.g. Gel polish restock"
+          placeholder={t("e.g. Gel polish restock")}
           className={inputCls}
         />
       </Field>
       <div className="flex gap-3">
         <div className="flex-1">
-          <Field label="Amount">
+          <Field label={t("Amount")}>
             <input
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
@@ -147,7 +154,7 @@ function AddExpenseModal({
           </Field>
         </div>
         <div className="flex-1">
-          <Field label="Date">
+          <Field label={t("Date")}>
             <input
               type="date"
               value={date}
@@ -157,7 +164,7 @@ function AddExpenseModal({
           </Field>
         </div>
       </div>
-      <Field label="Category">
+      <Field label={t("Category")}>
         <div className="flex flex-wrap gap-2">
           {CATS.map((c) => (
             <button
@@ -169,7 +176,7 @@ function AddExpenseModal({
                   : "border border-input bg-white text-[#8a8178]"
               }`}
             >
-              {c.label}
+              {t(c.label)}
             </button>
           ))}
         </div>

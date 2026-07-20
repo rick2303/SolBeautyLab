@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { tr, LANG_COOKIE, type Lang } from "@/lib/i18n";
+import { saveLangPref } from "@/lib/lang-actions";
 
 const LangCtx = createContext<Lang>("en");
 
@@ -47,20 +48,24 @@ export function useLocalLang() {
   };
 }
 
-/** Selector EN | ES */
+/** Selector EN | ES. persist: además de la cookie, guarda la preferencia
+ * en el profile del usuario logueado (sobrevive a otros dispositivos). */
 export function LangToggle({
   lang,
   onChange,
   refresh = false,
+  persist = false,
 }: {
   lang: Lang;
   onChange?: (l: Lang) => void;
   refresh?: boolean;
+  persist?: boolean;
 }) {
   const router = useRouter();
 
   function pick(l: Lang) {
     setLangCookie(l);
+    if (persist) saveLangPref(l); // fire-and-forget
     onChange?.(l);
     if (refresh) router.refresh();
   }
@@ -71,7 +76,7 @@ export function LangToggle({
         <button
           key={l}
           onClick={() => pick(l)}
-          className={`h-6 cursor-pointer rounded-[16px] px-2 text-[10px] font-semibold uppercase tracking-wide ${
+          className={`h-7 cursor-pointer rounded-[16px] px-2.5 text-[10.5px] font-semibold uppercase tracking-wide ${
             lang === l
               ? "bg-card text-gold-dark shadow-sm"
               : "bg-transparent text-faint"

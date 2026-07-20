@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Modal, Field, inputCls, PrimaryBtn, GhostBtn } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toaster";
-import { fmtMoney } from "@/lib/format";
+import { useLang } from "@/components/LangProvider";
+import { fmtMoney, fmtTime } from "@/lib/format";
 import { effectiveDayHours, toMin, DOW_KEYS } from "@/lib/schedule";
+import { notifyInternalAppointment } from "@/app/(app)/appointment-actions";
 import type { Client, Profile, Service, WorkHours } from "@/lib/types";
 
 export function AppointmentModal({
@@ -35,6 +37,7 @@ export function AppointmentModal({
   const [techHours, setTechHours] = useState<WorkHours | null>(null);
   const toast = useToast();
   const router = useRouter();
+  const { t } = useLang();
 
   useEffect(() => {
     const supabase = createClient();
@@ -73,7 +76,7 @@ export function AppointmentModal({
   async function save() {
     const service = services.find((s) => s.id === serviceId);
     if (!clientId || !service || !staffId) {
-      toast("Pick client, service & tech");
+      toast(t("Pick client, service & tech"));
       return;
     }
     setSaving(true);
@@ -100,49 +103,55 @@ export function AppointmentModal({
       setSaving(false);
       const who =
         (conflict.clients as unknown as { full_name: string } | null)
-          ?.full_name ?? "another client";
+          ?.full_name ?? t("Client");
       toast(
-        `⚠ Time conflict: this technician has ${who} at ${new Date(conflict.starts_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+        `⚠︎ ${t("Time conflict")}: ${who} · ${fmtTime(conflict.starts_at)}`
       );
       return;
     }
 
-    const { error } = await supabase.from("appointments").insert({
-      client_id: clientId,
-      service_id: service.id,
-      staff_id: staffId,
-      starts_at: starts.toISOString(),
-      duration_min: service.duration_min,
-      price: service.price,
-      status: "scheduled",
-      created_by: me.id,
-    });
+    const { data: created, error } = await supabase
+      .from("appointments")
+      .insert({
+        client_id: clientId,
+        service_id: service.id,
+        staff_id: staffId,
+        starts_at: starts.toISOString(),
+        duration_min: service.duration_min,
+        price: service.price,
+        status: "scheduled",
+        created_by: me.id,
+      })
+      .select("id")
+      .single();
     setSaving(false);
-    if (error) {
-      toast("Could not book: " + error.message);
+    if (error || !created) {
+      toast(t("Could not book:") + " " + (error?.message ?? ""));
       return;
     }
-    toast("Appointment booked");
+    // Manda el SMS de confirmación al cliente + avisa al staff (no bloquea)
+    notifyInternalAppointment(created.id);
+    toast(t("Appointment booked"));
     onClose();
     router.refresh();
   }
 
   return (
     <Modal
-      title="New appointment"
+      title={t("New appointment")}
       onClose={onClose}
       footer={
         <>
           <GhostBtn onClick={onClose} className="flex-1">
-            Cancel
+            {t("Cancel")}
           </GhostBtn>
           <PrimaryBtn onClick={save} loading={saving} className="flex-[2]">
-            {saving ? "Booking…" : "Create appointment"}
+            {saving ? t("Booking…") : t("Create appointment")}
           </PrimaryBtn>
         </>
       }
     >
-      <Field label="Client">
+      <Field label={t("Client")}>
         <select
           value={clientId}
           onChange={(e) => setClientId(e.target.value)}
@@ -155,7 +164,7 @@ export function AppointmentModal({
           ))}
         </select>
       </Field>
-      <Field label="Service">
+      <Field label={t("Service")}>
         <select
           value={serviceId}
           onChange={(e) => setServiceId(e.target.value)}
@@ -168,7 +177,7 @@ export function AppointmentModal({
           ))}
         </select>
       </Field>
-      <Field label="Technician">
+      <Field label={t("Technician")}>
         <select
           value={staffId}
           onChange={(e) => setStaffId(e.target.value)}
@@ -184,17 +193,18 @@ export function AppointmentModal({
       </Field>
       <div className="flex gap-3">
         <div className="flex-1">
-          <Field label="Date">
+          <Field label={t("Date")}>
             <input
               type="date"
               value={date}
+              min={new Date().toISOString().slice(0, 10)}
               onChange={(e) => setDate(e.target.value)}
               className={inputCls}
             />
           </Field>
         </div>
         <div className="flex-1">
-          <Field label="Time">
+          <Field label={t("Time")}>
             <input
               type="time"
               value={time}
@@ -206,8 +216,10 @@ export function AppointmentModal({
       </div>
       {outsideHours && (
         <div className="rounded-[10px] border border-[#e4c97e] bg-[#fdf7e8] px-3.5 py-2.5 text-[11.5px] leading-relaxed text-[#8a6526]">
-          ⚠ Outside this technician&apos;s working hours — you can still book
-          it, but online clients can&apos;t
+          ⚠︎{" "}
+          {t(
+            "Outside this technician's working hours — you can still book it, but online clients can't"
+          )}
         </div>
       )}
     </Modal>

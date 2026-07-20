@@ -7,6 +7,8 @@ import { getLang } from "@/lib/lang-server";
 import { tr } from "@/lib/i18n";
 import type { AppointmentFull } from "@/lib/types";
 
+export const metadata = { title: "Inspo" };
+
 export default async function InspoPage() {
   const session = await getSessionProfile();
   if (!session?.profile) redirect("/login");
@@ -33,7 +35,10 @@ export default async function InspoPage() {
         title={t("Inspo")}
         sub={t("Prep your work — inspiration photos per appointment")}
       />
-      <InspoClient appts={(data ?? []) as unknown as AppointmentFull[]} />
+      <InspoClient
+        appts={(data ?? []) as unknown as AppointmentFull[]}
+        isOwner={me.role === "owner"}
+      />
     </div>
   );
 }

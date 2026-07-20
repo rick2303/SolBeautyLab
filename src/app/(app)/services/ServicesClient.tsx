@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Modal, Field, inputCls, PrimaryBtn, GhostBtn } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toaster";
+import { useLang } from "@/components/LangProvider";
 import { fmtMoney } from "@/lib/format";
 import type { Profile, Service, ServiceCategory } from "@/lib/types";
 
@@ -20,8 +21,11 @@ export function ServicesClient({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState({ price: "", duration: "" });
   const [adding, setAdding] = useState(false);
+  const [addingCat, setAddingCat] = useState(false);
+  const [editingCat, setEditingCat] = useState<ServiceCategory | null>(null);
   const toast = useToast();
   const router = useRouter();
+  const { t } = useLang();
   const isOwner = me.role === "owner";
 
   async function saveEdit(id: string) {
@@ -33,35 +37,66 @@ export function ServicesClient({
       .update({ price, duration_min })
       .eq("id", id);
     if (error) {
-      toast("Update failed: " + error.message);
+      toast(t("Update failed:") + " " + error.message);
       return;
     }
     setEditingId(null);
-    toast("Service updated");
+    toast(t("Service updated"));
     router.refresh();
   }
 
   return (
     <>
       {isOwner && (
-        <div className="mb-3.5 flex justify-end">
+        <div className="mb-3.5 flex justify-end gap-2">
+          <button
+            onClick={() => setAddingCat(true)}
+            className="h-9 cursor-pointer rounded-[20px] border border-chip-border bg-card px-4 text-[12.5px] font-medium text-gold-dark"
+          >
+            {t("+ Add category")}
+          </button>
           <button
             onClick={() => setAdding(true)}
             className="h-9 cursor-pointer rounded-[20px] border border-chip-border bg-card px-4 text-[12.5px] font-medium text-gold-dark"
           >
-            + Add service
+            {t("+ Add service")}
           </button>
         </div>
       )}
 
       {categories.map((cat) => {
         const items = services.filter((s) => s.category_id === cat.id);
-        if (items.length === 0) return null;
+        // Las vacías solo las ve la dueña (para poder editarlas/desactivarlas)
+        if (items.length === 0 && !isOwner) return null;
         return (
-          <div key={cat.id} className="mb-[18px]">
-            <div className="mb-2 font-serif text-lg font-semibold text-gold-dark">
-              {cat.name}
+          <div
+            key={cat.id}
+            className={`mb-[18px] ${cat.is_active === false ? "opacity-55" : ""}`}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2 font-serif text-lg font-semibold text-gold-dark">
+                <span className="text-[16px]">{cat.icon ?? "❀"}</span>
+                {cat.name}
+                {cat.is_active === false && (
+                  <span className="rounded-[20px] bg-tan px-2 py-0.5 font-sans text-[9px] font-medium tracking-[0.08em] text-[#8a8178]">
+                    {t("INACTIVE")}
+                  </span>
+                )}
+              </div>
+              {isOwner && (
+                <button
+                  onClick={() => setEditingCat(cat)}
+                  className="h-7 cursor-pointer rounded-[20px] border border-line-2 bg-white px-3 text-[11px] text-gold-dark"
+                >
+                  {t("Edit")}
+                </button>
+              )}
             </div>
+            {items.length === 0 ? (
+              <div className="rounded-[14px] border border-dashed border-line-2 bg-card p-4 text-center text-[11.5px] text-faint">
+                {t("No services in this category yet")}
+              </div>
+            ) : (
             <div className="overflow-hidden rounded-[14px] border border-line bg-card">
               {items.map((s) => {
                 const editing = editingId === s.id;
@@ -93,7 +128,7 @@ export function ServicesClient({
                           onClick={() => saveEdit(s.id)}
                           className="grad-gold h-8 cursor-pointer rounded-lg border-none px-3.5 text-xs text-white"
                         >
-                          Save
+                          {t("Save")}
                         </button>
                       </>
                     ) : (
@@ -115,7 +150,7 @@ export function ServicesClient({
                             }}
                             className="h-8 cursor-pointer rounded-lg border border-[#ece2d0] bg-white px-3 text-xs text-gold-dark"
                           >
-                            Edit
+                            {t("Edit")}
                           </button>
                         )}
                       </>
@@ -124,20 +159,253 @@ export function ServicesClient({
                 );
               })}
             </div>
+            )}
           </div>
         );
       })}
 
       {categories.length === 0 && (
         <div className="py-10 text-center text-[13px] text-faint">
-          No categories yet — run supabase/seed.sql or add services below.
+          {t("No categories yet — run supabase/seed.sql or add services below.")}
         </div>
       )}
 
       {adding && (
         <AddServiceModal categories={categories} onClose={() => setAdding(false)} />
       )}
+      {addingCat && (
+        <AddCategoryModal
+          categories={categories}
+          onClose={() => setAddingCat(false)}
+        />
+      )}
+      {editingCat && (
+        <EditCategoryModal
+          category={editingCat}
+          onClose={() => setEditingCat(null)}
+        />
+      )}
     </>
+  );
+}
+
+// Glifos monocromos disponibles para categorías (sin emojis)
+const CATEGORY_ICONS = [
+  "❀", "✿", "❁", "❃", "❋", "⚘",
+  "✧", "✦", "✤", "✻", "✺", "❖",
+  "✄", "♛", "❦", "☾", "♡", "◈",
+];
+
+function AddCategoryModal({
+  categories,
+  onClose,
+}: {
+  categories: ServiceCategory[];
+  onClose: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [icon, setIcon] = useState("❀");
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
+  const router = useRouter();
+  const { t } = useLang();
+
+  async function save() {
+    if (!name.trim()) {
+      toast(t("Category name is required"));
+      return;
+    }
+    setSaving(true);
+    const supabase = createClient();
+    const { error } = await supabase.from("service_categories").insert({
+      name: name.trim(),
+      sort_order: categories.length,
+      icon,
+    });
+    setSaving(false);
+    if (error) {
+      toast(t("Could not save:") + " " + error.message);
+      return;
+    }
+    toast(t("Category added"));
+    onClose();
+    router.refresh();
+  }
+
+  return (
+    <Modal
+      title={t("Add category")}
+      onClose={onClose}
+      width={420}
+      footer={
+        <>
+          <GhostBtn onClick={onClose} className="flex-1">
+            {t("Cancel")}
+          </GhostBtn>
+          <PrimaryBtn onClick={save} loading={saving} className="flex-[2]">
+            {saving ? t("Saving…") : t("Save category")}
+          </PrimaryBtn>
+        </>
+      }
+    >
+      <Field label={t("Category name")}>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t("e.g. Skincare")}
+          autoFocus
+          className={inputCls}
+        />
+      </Field>
+      <Field label={t("Icon")}>
+        <IconPicker value={icon} onChange={setIcon} />
+      </Field>
+    </Modal>
+  );
+}
+
+function IconPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (ic: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-6 gap-1.5">
+      {CATEGORY_ICONS.map((ic) => (
+        <button
+          key={ic}
+          onClick={() => onChange(ic)}
+          className={`h-10 cursor-pointer rounded-[10px] border text-[18px] ${
+            value === ic
+              ? "grad-gold-soft border-gold text-gold-deep"
+              : "border-input bg-white text-[#8a8178]"
+          }`}
+        >
+          {ic}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ToggleRow({
+  label,
+  hint,
+  on,
+  onToggle,
+}: {
+  label: string;
+  hint: string;
+  on: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-line bg-card p-3">
+      <div>
+        <div className="text-[13px] font-medium">{label}</div>
+        <div className="text-[11px] text-muted">{hint}</div>
+      </div>
+      <div
+        onClick={onToggle}
+        className="cursor-pointer rounded-[20px] p-[3px] transition-colors"
+        style={{
+          width: 44,
+          height: 26,
+          background: on ? "#8a6526" : "#e0d4bd",
+        }}
+      >
+        <div
+          className="h-5 w-5 rounded-full bg-white transition-transform"
+          style={{ transform: on ? "translateX(18px)" : "none" }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function EditCategoryModal({
+  category,
+  onClose,
+}: {
+  category: ServiceCategory;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(category.name);
+  const [icon, setIcon] = useState(category.icon ?? "❀");
+  const [active, setActive] = useState(category.is_active !== false);
+  const [hidePrices, setHidePrices] = useState(category.hide_prices === true);
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
+  const router = useRouter();
+  const { t } = useLang();
+
+  async function save() {
+    if (!name.trim()) {
+      toast(t("Category name is required"));
+      return;
+    }
+    setSaving(true);
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("service_categories")
+      .update({
+        name: name.trim(),
+        icon,
+        is_active: active,
+        hide_prices: hidePrices,
+      })
+      .eq("id", category.id);
+    setSaving(false);
+    if (error) {
+      toast(t("Update failed:") + " " + error.message);
+      return;
+    }
+    toast(t("Category updated"));
+    onClose();
+    router.refresh();
+  }
+
+  return (
+    <Modal
+      title={t("Edit category")}
+      onClose={onClose}
+      width={420}
+      footer={
+        <>
+          <GhostBtn onClick={onClose} className="flex-1">
+            {t("Cancel")}
+          </GhostBtn>
+          <PrimaryBtn onClick={save} loading={saving} className="flex-[2]">
+            {saving ? t("Saving…") : t("Save changes")}
+          </PrimaryBtn>
+        </>
+      }
+    >
+      <Field label={t("Category name")}>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className={inputCls}
+        />
+      </Field>
+      <Field label={t("Icon")}>
+        <IconPicker value={icon} onChange={setIcon} />
+      </Field>
+      <ToggleRow
+        label={t("Active")}
+        hint={t("Inactive categories are hidden from online booking")}
+        on={active}
+        onToggle={() => setActive((v) => !v)}
+      />
+      <ToggleRow
+        label={t("Hide prices in online booking")}
+        hint={t("Clients see services without prices — pricing is discussed at the salon")}
+        on={hidePrices}
+        onToggle={() => setHidePrices((v) => !v)}
+      />
+    </Modal>
   );
 }
 
@@ -148,18 +416,21 @@ function AddServiceModal({
   categories: ServiceCategory[];
   onClose: () => void;
 }) {
+  // Solo se pueden agregar servicios a categorías activas
+  const activeCats = categories.filter((c) => c.is_active !== false);
   const [name, setName] = useState("");
-  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
+  const [categoryId, setCategoryId] = useState(activeCats[0]?.id ?? "");
   const [newCat, setNewCat] = useState("");
   const [price, setPrice] = useState("");
   const [duration, setDuration] = useState("60");
   const [saving, setSaving] = useState(false);
   const toast = useToast();
   const router = useRouter();
+  const { t } = useLang();
 
   async function save() {
     if (!name.trim() || !price) {
-      toast("Name & price are required");
+      toast(t("Name & price are required"));
       return;
     }
     setSaving(true);
@@ -173,7 +444,7 @@ function AddServiceModal({
         .single();
       if (error || !data) {
         setSaving(false);
-        toast("Category failed: " + (error?.message ?? ""));
+        toast(t("Category failed:") + " " + (error?.message ?? ""));
         return;
       }
       catId = data.id;
@@ -186,62 +457,62 @@ function AddServiceModal({
     });
     setSaving(false);
     if (error) {
-      toast("Could not save: " + error.message);
+      toast(t("Could not save:") + " " + error.message);
       return;
     }
-    toast("Service added");
+    toast(t("Service added"));
     onClose();
     router.refresh();
   }
 
   return (
     <Modal
-      title="Add service"
+      title={t("Add service")}
       onClose={onClose}
       footer={
         <>
           <GhostBtn onClick={onClose} className="flex-1">
-            Cancel
+            {t("Cancel")}
           </GhostBtn>
           <PrimaryBtn onClick={save} loading={saving} className="flex-[2]">
-            {saving ? "Saving…" : "Save service"}
+            {saving ? t("Saving…") : t("Save service")}
           </PrimaryBtn>
         </>
       }
     >
-      <Field label="Service name">
+      <Field label={t("Service name")}>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. Gel full set"
+          placeholder={t("e.g. Gel full set")}
           className={inputCls}
         />
       </Field>
-      <Field label="Category">
+      <Field label={t("Category")}>
         <select
           value={categoryId}
           onChange={(e) => setCategoryId(e.target.value)}
           className={inputCls}
           disabled={!!newCat.trim()}
         >
-          {categories.map((c) => (
+          {activeCats.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
             </option>
           ))}
         </select>
       </Field>
-      <Field label="…or new category">
+      <Field label={t("…or new category")}>
         <input
           value={newCat}
           onChange={(e) => setNewCat(e.target.value)}
-          placeholder="e.g. Skincare"
+          placeholder={t("e.g. Skincare")}
           className={inputCls}
         />
       </Field>
       <div className="flex gap-3">
         <div className="flex-1">
-          <Field label="Price ($)">
+          <Field label={t("Price ($)")}>
             <input
               value={price}
               onChange={(e) => setPrice(e.target.value)}
@@ -251,7 +522,7 @@ function AddServiceModal({
           </Field>
         </div>
         <div className="flex-1">
-          <Field label="Duration (min)">
+          <Field label={t("Duration (min)")}>
             <input
               value={duration}
               onChange={(e) => setDuration(e.target.value)}

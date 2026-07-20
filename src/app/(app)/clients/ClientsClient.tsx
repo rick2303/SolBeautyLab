@@ -36,6 +36,10 @@ interface Visit {
   profiles: { full_name: string } | null;
 }
 
+/** Historial de visitas: la dueña pagina de 10; el staff solo ve las 2 últimas */
+const HISTORY_PAGE = 10;
+const STAFF_HISTORY = 2;
+
 export function ClientsClient({
   me,
   clients,
@@ -205,20 +209,35 @@ function ClientDrawer({
   onClose: () => void;
 }) {
   const [history, setHistory] = useState<Visit[]>([]);
+  const [histTotal, setHistTotal] = useState(0);
+  const [histPage, setHistPage] = useState(0);
   const [editing, setEditing] = useState(false);
   const { t } = useLang();
   const canEdit = me.role !== "staff";
+  // La dueña ve el historial completo paginado; el resto del equipo solo
+  // las 2 visitas más recientes (RLS ya limita las suyas).
+  const isOwner = me.role === "owner";
+  const histPerPage = isOwner ? HISTORY_PAGE : STAFF_HISTORY;
+
+  useEffect(() => setHistPage(0), [client.id]);
 
   useEffect(() => {
     const supabase = createClient();
+    const from = isOwner ? histPage * HISTORY_PAGE : 0;
     supabase
       .from("appointments")
-      .select("id, starts_at, price, services(name), profiles!staff_id(full_name)")
+      .select(
+        "id, starts_at, price, services(name), profiles!staff_id(full_name)",
+        { count: "exact" }
+      )
       .eq("client_id", client.id)
       .order("starts_at", { ascending: false })
-      .limit(10)
-      .then(({ data }) => setHistory((data ?? []) as unknown as Visit[]));
-  }, [client.id]);
+      .range(from, from + histPerPage - 1)
+      .then(({ data, count }) => {
+        setHistory((data ?? []) as unknown as Visit[]);
+        setHistTotal(count ?? 0);
+      });
+  }, [client.id, histPage, isOwner, histPerPage]);
 
   return (
     <ModalShell onClose={onClose} width={440} align="right">
@@ -302,8 +321,15 @@ function ClientDrawer({
 
           <ClientGallery clientId={client.id} />
 
-          <div className="mb-2 mt-[22px] text-[11px] uppercase tracking-[0.06em] text-muted">
-            {t("Visit history")}
+          <div className="mb-2 mt-[22px] flex items-baseline justify-between">
+            <span className="text-[11px] uppercase tracking-[0.06em] text-muted">
+              {t("Visit history")}
+            </span>
+            {!isOwner && histTotal > STAFF_HISTORY && (
+              <span className="text-[10.5px] text-faint">
+                {t("Latest 2 of")} {histTotal}
+              </span>
+            )}
           </div>
           {history.length === 0 && (
             <div className="py-4 text-[12px] text-faint">
@@ -330,6 +356,15 @@ function ClientDrawer({
               </div>
             </div>
           ))}
+
+          {isOwner && (
+            <Pagination
+              page={histPage}
+              total={histTotal}
+              perPage={HISTORY_PAGE}
+              onChange={setHistPage}
+            />
+          )}
 
           <NewApptButton
             clients={[{ id: client.id, full_name: client.full_name }]}
@@ -385,7 +420,6 @@ function EditClientModal({
   const [notes, setNotes] = useState(client.notes ?? "");
   const [tags, setTags] = useState(client.tags.join(", "));
   const [sms, setSms] = useState(client.sms_opt_in);
-  const [wa, setWa] = useState(client.whatsapp_opt_in);
   const [saving, setSaving] = useState(false);
   const toast = useToast();
   const router = useRouter();
@@ -410,7 +444,6 @@ function EditClientModal({
           .map((x) => x.trim())
           .filter(Boolean),
         sms_opt_in: sms,
-        whatsapp_opt_in: wa,
       })
       .eq("id", client.id);
     setSaving(false);
@@ -485,11 +518,10 @@ function EditClientModal({
       </Field>
       <div className="flex gap-2">
         <OptToggle
-          label="WhatsApp"
-          on={wa}
-          onToggle={() => setWa((v) => !v)}
+          label={t("SMS reminders")}
+          on={sms}
+          onToggle={() => setSms((v) => !v)}
         />
-        <OptToggle label="SMS" on={sms} onToggle={() => setSms((v) => !v)} />
       </div>
     </Modal>
   );
@@ -506,6 +538,7 @@ function ClientGallery({ clientId }: { clientId: string }) {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [uploading, setUploading] = useState(false);
   const [lightbox, setLightbox] = useState<Photo | null>(null);
+  const [confirmDel, setConfirmDel] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
   const { t } = useLang();
@@ -543,11 +576,11 @@ function ClientGallery({ clientId }: { clientId: string }) {
         .upload(`${clientId}/${Date.now()}-${safe}`, file, {
           cacheControl: "3600",
         });
-      if (error) toast("Upload failed: " + error.message);
+      if (error) toast(t("Upload failed:") + " " + error.message);
     }
     setUploading(false);
     if (fileRef.current) fileRef.current.value = "";
-    toast("Photo added ✨");
+    toast(t("Photo added ✓"));
     load();
   }
 
@@ -557,12 +590,13 @@ function ClientGallery({ clientId }: { clientId: string }) {
       .from(BUCKET)
       .remove([`${clientId}/${photo.name}`]);
     if (error) {
-      toast("Delete failed: " + error.message);
+      toast(t("Delete failed:") + " " + error.message);
       return;
     }
     setLightbox(null);
+    setConfirmDel(false);
     setPhotos((p) => p.filter((x) => x.name !== photo.name));
-    toast("Photo removed");
+    toast(t("Photo removed"));
   }
 
   return (
@@ -614,7 +648,13 @@ function ClientGallery({ clientId }: { clientId: string }) {
       )}
 
       {lightbox && (
-        <ModalShell onClose={() => setLightbox(null)} width={720}>
+        <ModalShell
+          onClose={() => {
+            setLightbox(null);
+            setConfirmDel(false);
+          }}
+          width={720}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={lightbox.url}
@@ -623,13 +663,22 @@ function ClientGallery({ clientId }: { clientId: string }) {
           />
           <div className="flex flex-none items-center justify-between px-5 py-3">
             <button
-              onClick={() => remove(lightbox)}
-              className="h-9 cursor-pointer rounded-[10px] border border-[#e9d6d6] bg-[#fbf3f3] px-3.5 text-[12px] font-medium text-[#b06a6a]"
+              onClick={() =>
+                confirmDel ? remove(lightbox) : setConfirmDel(true)
+              }
+              className={`h-9 cursor-pointer rounded-[10px] border px-3.5 text-[12px] font-medium ${
+                confirmDel
+                  ? "border-[#b06a6a] bg-[#b06a6a] text-white"
+                  : "border-[#e9d6d6] bg-[#fbf3f3] text-[#b06a6a]"
+              }`}
             >
-              {t("Delete photo")}
+              {confirmDel ? t("Tap again to delete") : t("Delete photo")}
             </button>
             <button
-              onClick={() => setLightbox(null)}
+              onClick={() => {
+                setLightbox(null);
+                setConfirmDel(false);
+              }}
               className="h-9 cursor-pointer rounded-[10px] border border-[#ece2d0] bg-white px-3.5 text-[12px] text-[#8a8178]"
             >
               {t("Close")}

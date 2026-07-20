@@ -1,9 +1,7 @@
 import { getBookingData } from "./actions";
 import { BookingClient } from "./BookingClient";
 
-export const metadata = {
-  title: "Book an appointment · Sol Beauty Lab",
-};
+export const metadata = { title: "Book an appointment" };
 
 // Siempre datos frescos (servicios, equipo y horarios)
 export const dynamic = "force-dynamic";

@@ -11,17 +11,21 @@
   "dependencies": {
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.50.0",
+    "country-flag-icons": "^1.6.20",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
+    "libphonenumber-js": "^1.13.9",
     "next": "^15.3.4",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.10",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "tailwindcss": "^4.1.10",
     "typescript": "^5"
   }

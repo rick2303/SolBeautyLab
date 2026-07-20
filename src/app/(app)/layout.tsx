@@ -4,6 +4,7 @@ import { getLang } from "@/lib/lang-server";
 import { MobileNav, Sidebar } from "@/components/Sidebar";
 import { LangProvider } from "@/components/LangProvider";
 import { ToastProvider } from "@/components/ui/Toaster";
+import { PushRegister } from "@/components/PushRegister";
 import { SolLogo } from "@/components/SolLogo";
 
 export default async function AppLayout({
@@ -36,9 +37,8 @@ export default async function AppLayout({
     );
   }
 
-  if (!session.profile.is_active) {
-    redirect("/login");
-  }
+  // is_active y must_change_password los resuelve el middleware — hacerlo
+  // también aquí creaba redirects contradictorios (bucle infinito).
 
   return (
     <LangProvider lang={lang}>
@@ -50,6 +50,7 @@ export default async function AppLayout({
             {children}
           </main>
         </div>
+        <PushRegister />
       </ToastProvider>
     </LangProvider>
   );

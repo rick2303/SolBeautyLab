@@ -1,15 +1,19 @@
 import { redirect } from "next/navigation";
 import { createClient, getSessionProfile } from "@/lib/supabase/server";
+import { canAccess } from "@/lib/roles";
 import { PageHeader } from "@/components/PageHeader";
 import { NewApptButton } from "@/components/NewApptButton";
 import { getLang } from "@/lib/lang-server";
 import { tr } from "@/lib/i18n";
 import { CalendarClient } from "./CalendarClient";
 
+export const metadata = { title: "Calendar" };
+
 export default async function CalendarPage() {
   const session = await getSessionProfile();
   if (!session?.profile) redirect("/login");
   const me = session.profile;
+  if (!canAccess(me, "calendar")) redirect("/dashboard");
   const supabase = await createClient();
 
   const { data: clientOpts } = await supabase

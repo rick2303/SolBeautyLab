@@ -3,60 +3,22 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/Toaster";
+import { useLang } from "@/components/LangProvider";
 import { STATUS_LABEL, METHOD_LABEL } from "@/lib/format";
+import { SALON_TZ } from "@/lib/tz";
+import { rangeLabel, reportRange, type Period } from "./range";
 import type { AppointmentStatus, PaymentMethod } from "@/lib/types";
-
-type Period = "day" | "week" | "month";
 
 const GOLD: [number, number, number] = [138, 101, 38];
 const INK: [number, number, number] = [43, 38, 34];
 const MUTED: [number, number, number] = [154, 144, 130];
 
-function rangeFor(period: Period): { from: Date; to: Date; label: string } {
-  const now = new Date();
-  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  if (period === "day") {
-    const to = new Date(startToday);
-    to.setDate(to.getDate() + 1);
-    return {
-      from: startToday,
-      to,
-      label: now.toLocaleDateString("en-US", {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      }),
-    };
-  }
-  if (period === "week") {
-    const from = new Date(startToday);
-    from.setDate(from.getDate() - ((from.getDay() + 6) % 7)); // lunes
-    const to = new Date(from);
-    to.setDate(to.getDate() + 7);
-    const end = new Date(to);
-    end.setDate(end.getDate() - 1);
-    return {
-      from,
-      to,
-      label: `${from.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`,
-    };
-  }
-  const from = new Date(now.getFullYear(), now.getMonth(), 1);
-  const to = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  return {
-    from,
-    to,
-    label: now.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
-  };
-}
-
 const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 
-export function ExportPdf() {
-  const [period, setPeriod] = useState<Period>("day");
+export function ExportPdf({ period }: { period: Period }) {
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  const { t } = useLang();
 
   async function generate() {
     setBusy(true);
@@ -64,7 +26,9 @@ export function ExportPdf() {
       const { jsPDF } = await import("jspdf");
       const autoTable = (await import("jspdf-autotable")).default;
 
-      const { from, to, label } = rangeFor(period);
+      // Mismo rango que muestra la pantalla, para que nunca discrepen
+      const { from, to } = reportRange(period);
+      const label = rangeLabel(period, "en-US");
       const supabase = createClient();
 
       const [{ data: pays }, { data: exps }, { data: appts }] =
@@ -72,22 +36,22 @@ export function ExportPdf() {
           supabase
             .from("payments")
             .select("amount, method, paid_at, clients(full_name)")
-            .gte("paid_at", from.toISOString())
-            .lt("paid_at", to.toISOString())
+            .gte("paid_at", from)
+            .lt("paid_at", to)
             .order("paid_at"),
           supabase
             .from("expenses")
             .select("description, category, amount, expense_date")
-            .gte("expense_date", from.toISOString().slice(0, 10))
-            .lt("expense_date", to.toISOString().slice(0, 10))
+            .gte("expense_date", from.slice(0, 10))
+            .lt("expense_date", to.slice(0, 10))
             .order("expense_date"),
           supabase
             .from("appointments")
             .select(
               "starts_at, price, status, clients(full_name), services(name), profiles!staff_id(full_name)"
             )
-            .gte("starts_at", from.toISOString())
-            .lt("starts_at", to.toISOString())
+            .gte("starts_at", from)
+            .lt("starts_at", to)
             .order("starts_at"),
         ]);
 
@@ -156,6 +120,7 @@ export function ExportPdf() {
           new Date(p.paid_at).toLocaleDateString("en-US", {
             month: "short",
             day: "numeric",
+            timeZone: SALON_TZ,
           }),
           (p.clients as unknown as { full_name: string } | null)?.full_name ?? "—",
           METHOD_LABEL[p.method as PaymentMethod] ?? p.method,
@@ -210,6 +175,7 @@ export function ExportPdf() {
             day: "numeric",
             hour: "numeric",
             minute: "2-digit",
+            timeZone: SALON_TZ,
           }),
           (a.clients as unknown as { full_name: string } | null)?.full_name ?? "—",
           (a.services as unknown as { name: string } | null)?.name ?? "—",
@@ -240,7 +206,7 @@ export function ExportPdf() {
       doc.save(
         `sol-report-${period}-${new Date().toISOString().slice(0, 10)}.pdf`
       );
-      toast("PDF exported");
+      toast(t("PDF exported"));
     } catch (e) {
       toast("Export failed: " + (e instanceof Error ? e.message : String(e)));
     } finally {
@@ -249,30 +215,13 @@ export function ExportPdf() {
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex gap-1.5 rounded-xl bg-tan p-1">
-        {(["day", "week", "month"] as Period[]).map((p) => (
-          <button
-            key={p}
-            onClick={() => setPeriod(p)}
-            className={`cursor-pointer rounded-[9px] border-none px-3 py-[6px] text-xs capitalize ${
-              period === p
-                ? "bg-card font-medium text-gold-dark shadow-sm"
-                : "bg-transparent text-[#8a8178]"
-            }`}
-          >
-            {p}
-          </button>
-        ))}
-      </div>
-      <button
-        onClick={generate}
-        disabled={busy}
-        className="grad-gold h-10 cursor-pointer rounded-[20px] border-none px-[18px] text-[13px] font-medium text-white disabled:opacity-60"
-        style={{ boxShadow: "0 10px 20px -12px rgba(138,101,38,.9)" }}
-      >
-        {busy ? "Generating…" : "⭳ Export PDF"}
-      </button>
-    </div>
+    <button
+      onClick={generate}
+      disabled={busy}
+      className="grad-gold h-10 cursor-pointer rounded-[20px] border-none px-[18px] text-[13px] font-medium text-white disabled:opacity-60"
+      style={{ boxShadow: "0 10px 20px -12px rgba(138,101,38,.9)" }}
+    >
+      {busy ? t("Generating…") : t("⭳ Export PDF")}
+    </button>
   );
 }

@@ -5,7 +5,6 @@ export interface NavItem {
   label: string;
   icon: string;
   href: string;
-  pro?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -15,18 +14,19 @@ export const NAV_ITEMS: NavItem[] = [
   { key: "services", label: "Services", icon: "✦", href: "/services" },
   { key: "payments", label: "Payments", icon: "$", href: "/payments" },
   { key: "expenses", label: "Expenses", icon: "▤", href: "/expenses" },
-  { key: "inspo", label: "Inspo", icon: "✨", href: "/inspo" },
-  { key: "schedule", label: "Schedule", icon: "⏰", href: "/schedule" },
-  { key: "team", label: "Team", icon: "☺", href: "/team" },
+  { key: "inspo", label: "Inspo", icon: "✧", href: "/inspo" },
+  { key: "schedule", label: "Schedule", icon: "◷", href: "/schedule" },
+  { key: "team", label: "Team", icon: "☺︎", href: "/team" },
   { key: "reports", label: "Reports", icon: "◔", href: "/reports" },
-  { key: "reminders", label: "Reminders", icon: "✉", href: "/reminders", pro: true },
+  { key: "reminders", label: "Reminders", icon: "✉︎", href: "/reminders" },
+  { key: "settings", label: "Settings", icon: "⚙︎", href: "/settings" },
 ];
 
 export const ALL_MODULES = NAV_ITEMS.map((n) => n.key);
 
 /** Permisos extra que no son páginas del nav */
 export const EXTRA_PERMISSIONS: { key: string; label: string; icon: string }[] =
-  [{ key: "calendar_all", label: "Team calendar", icon: "👥" }];
+  [{ key: "calendar_all", label: "Team calendar", icon: "⧉" }];
 
 export const ALL_PERMISSION_KEYS = [
   ...ALL_MODULES,

@@ -9,16 +9,20 @@ export interface CreateMemberInput {
   email: string;
   password: string;
   role: Role;
-  specialty: string;
+  specialties: string[];
   phone: string;
 }
 
 export async function createTeamMember(
   input: CreateMemberInput
-): Promise<{ ok?: true; error?: string }> {
+): Promise<{ ok?: true; id?: string; error?: string }> {
   const session = await getSessionProfile();
   if (session?.profile?.role !== "owner") {
     return { error: "Only the owner can add team members" };
+  }
+
+  if (!/^\d{6}$/.test(input.password)) {
+    return { error: "Temp password must be exactly 6 digits" };
   }
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -50,11 +54,13 @@ export async function createTeamMember(
       id: data.user.id,
       full_name: input.full_name.trim(),
       role: input.role,
-      specialty: input.specialty.trim() || null,
+      specialties: input.specialties ?? [],
       phone: input.phone.trim() || null,
       is_active: true,
+      // Contraseña temporal: se le pedirá cambiarla al primer ingreso
+      must_change_password: true,
     });
   if (pErr) return { error: pErr.message };
 
-  return { ok: true };
+  return { ok: true, id: data.user.id };
 }

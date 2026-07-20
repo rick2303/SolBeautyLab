@@ -7,6 +7,8 @@ import { getLang } from "@/lib/lang-server";
 import { tr } from "@/lib/i18n";
 import type { Profile, WorkHours } from "@/lib/types";
 
+export const metadata = { title: "Schedule" };
+
 export default async function SchedulePage() {
   const session = await getSessionProfile();
   if (!session?.profile) redirect("/login");
@@ -22,7 +24,7 @@ export default async function SchedulePage() {
     me.role === "owner"
       ? supabase
           .from("profiles")
-          .select("id, full_name, role, specialty, work_hours")
+          .select("id, full_name, role, specialties, work_hours")
           .eq("is_active", true)
           .order("full_name")
       : Promise.resolve({ data: null }),
@@ -44,7 +46,7 @@ export default async function SchedulePage() {
         me={me}
         team={(team ?? null) as Pick<
           Profile,
-          "id" | "full_name" | "role" | "specialty" | "work_hours"
+          "id" | "full_name" | "role" | "specialties" | "work_hours"
         >[] | null}
         salonHours={salonHours}
       />

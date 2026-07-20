@@ -39,17 +39,35 @@ export interface Profile {
   full_name: string;
   phone: string | null;
   role: Role;
-  specialty: string | null;
+  specialty: string | null; // heredado: la app usa `specialties`
+  specialties: string[]; // categorías de servicio que atiende
   is_active: boolean;
   modules: string[] | null; // null = módulos por defecto del rol
   work_hours: WorkHours | null; // null = aplican las horas del salón
+  lang: "en" | "es" | null; // preferencia de idioma guardada
+  must_change_password: boolean; // true tras crearse con contraseña temporal
   created_at: string;
+}
+
+export interface SalonSettings {
+  salon_name: string;
+  timezone: string;
+  currency: string;
+  default_country: string;
+  opening_hours: WorkHours;
+  phone: string | null;
+  whatsapp: string | null;
+  instagram: string | null;
+  address: string | null;
 }
 
 export interface ServiceCategory {
   id: string;
   name: string;
   sort_order: number;
+  icon: string | null; // glifo unicode; null = ícono por defecto
+  is_active: boolean; // false = oculta del booking en línea
+  hide_prices: boolean; // true = el booking no muestra precios de esta categoría
 }
 
 export interface Service {

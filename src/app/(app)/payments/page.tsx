@@ -9,6 +9,8 @@ import { getLang } from "@/lib/lang-server";
 import { tr } from "@/lib/i18n";
 import type { PaymentMethod } from "@/lib/types";
 
+export const metadata = { title: "Payments" };
+
 export default async function PaymentsPage() {
   const session = await getSessionProfile();
   if (!session?.profile) redirect("/login");

@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { SolLogo } from "@/components/SolLogo";
 import { inputCls } from "@/components/ui/Modal";
 import { LangToggle, useLocalLang } from "@/components/LangProvider";
 
@@ -21,12 +20,25 @@ export default function LoginPage() {
     setError("");
     setNotice("");
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
     if (error) {
       setError(t("Invalid email or password"));
+      setLoading(false);
+      return;
+    }
+    // Supabase Auth no sabe de cuentas desactivadas: se revisa aquí y se
+    // cierra la sesión antes de navegar, para no rebotar contra el middleware.
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_active")
+      .eq("id", data.user.id)
+      .single();
+    if (profile?.is_active === false) {
+      await supabase.auth.signOut();
+      setError(t("This account is deactivated — ask the owner to reactivate it"));
       setLoading(false);
       return;
     }
@@ -62,9 +74,14 @@ export default function LoginPage() {
         <div className="absolute right-4 top-4">
           <LangToggle lang={lang} onChange={setLang} />
         </div>
-        <SolLogo />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/icons/logo-transparent.png"
+          alt="Sol Beauty Lab"
+          className="mx-auto w-[168px]"
+        />
         <div
-          className="mt-2 text-center text-[19px] text-[#b0863c]"
+          className="mt-1 text-center text-[19px] text-[#b0863c]"
           style={{ fontFamily: "var(--font-script)" }}
         >
           Luz que realza tu esencia
@@ -125,8 +142,14 @@ export default function LoginPage() {
           >
             {t("Forgot password?")}
           </button>
-          <div className="mt-2 text-center text-[11px] text-faint">
-            {t("Role-based access · staff see only their own book")}
+          <div className="mt-2 border-t border-line-4 pt-3 text-center text-[12px] text-muted">
+            {t("Looking to book a visit?")}{" "}
+            <a
+              href="/book"
+              className="font-medium text-[#b0863c] hover:text-gold-dark"
+            >
+              {t("Book an appointment →")}
+            </a>
           </div>
         </form>
       </div>

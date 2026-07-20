@@ -143,7 +143,20 @@ export function CalendarClient({ me }: { me: Profile }) {
           const s = startOfWeek(anchor);
           const e = new Date(s);
           e.setDate(e.getDate() + 6);
-          return `${s.toLocaleDateString(locale, { month: "long", day: "numeric" })} – ${e.toLocaleDateString(locale, { day: "numeric", year: "numeric" })}`;
+          // Pedir {day, year} sin mes no tiene formato estándar: el navegador
+          // devolvía cosas como "2026 (day: 19)". Se arma el rango a mano.
+          const sameMonth = s.getMonth() === e.getMonth();
+          const from = s.toLocaleDateString(locale, {
+            month: "short",
+            day: "numeric",
+          });
+          const to = e.toLocaleDateString(
+            locale,
+            sameMonth
+              ? { day: "numeric", month: undefined }
+              : { month: "short", day: "numeric" }
+          );
+          return `${from} – ${to}, ${e.getFullYear()}`;
         })()
       : anchor.toLocaleDateString(locale, { month: "long", year: "numeric" });
 
@@ -177,25 +190,27 @@ export function CalendarClient({ me }: { me: Profile }) {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-3">
+        {/* En móvil ocupa el ancho completo y el título se encoge, si no el
+            botón "Today" quedaba cortado fuera de la pantalla */}
+        <div className="flex w-full items-center gap-2 sm:w-auto sm:gap-3">
           <button
             onClick={() => shift(-1)}
-            className="h-8 w-8 cursor-pointer rounded-full border border-line-2 bg-card text-body"
+            className="h-8 w-8 flex-none cursor-pointer rounded-full border border-line-2 bg-card text-body"
           >
             ‹
           </button>
-          <div className="min-w-[210px] text-center text-[13px] font-medium text-body">
+          <div className="min-w-0 flex-1 text-center text-[13px] font-medium text-body sm:min-w-[210px] sm:flex-none">
             {rangeLabel}
           </div>
           <button
             onClick={() => shift(1)}
-            className="h-8 w-8 cursor-pointer rounded-full border border-line-2 bg-card text-body"
+            className="h-8 w-8 flex-none cursor-pointer rounded-full border border-line-2 bg-card text-body"
           >
             ›
           </button>
           <button
             onClick={() => setAnchor(new Date())}
-            className="h-8 cursor-pointer rounded-full border border-chip-border bg-card px-3.5 text-xs text-gold-dark"
+            className="h-8 flex-none cursor-pointer rounded-full border border-chip-border bg-card px-3.5 text-xs text-gold-dark"
           >
             {t("Today")}
           </button>
@@ -405,8 +420,14 @@ export function CalendarClient({ me }: { me: Profile }) {
                       {d}
                     </div>
                     {n > 0 && (
-                      <div className="mt-[5px] inline-block rounded-[20px] bg-gold-pale px-[7px] py-px text-[9.5px] text-gold-dark">
-                        {n} appt{n > 1 ? "s" : ""}
+                      <div className="mt-[5px] inline-block whitespace-nowrap rounded-[20px] bg-gold-pale px-[7px] py-px text-[9.5px] text-gold-dark">
+                        {n}
+                        {/* En celdas estrechas el texto se partía y deformaba
+                            la píldora: en móvil solo el número */}
+                        <span className="hidden sm:inline">
+                          {" "}
+                          {t(n > 1 ? "appts" : "appt")}
+                        </span>
                       </div>
                     )}
                   </div>

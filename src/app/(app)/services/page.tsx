@@ -7,6 +7,8 @@ import { tr } from "@/lib/i18n";
 import { ServicesClient } from "./ServicesClient";
 import type { Service, ServiceCategory } from "@/lib/types";
 
+export const metadata = { title: "Services" };
+
 export default async function ServicesPage() {
   const session = await getSessionProfile();
   if (!session?.profile) redirect("/login");

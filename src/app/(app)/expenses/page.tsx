@@ -18,6 +18,8 @@ const CAT_LABEL: Record<string, string> = {
   other: "Other",
 };
 
+export const metadata = { title: "Expenses" };
+
 export default async function ExpensesPage() {
   const session = await getSessionProfile();
   if (!session?.profile) redirect("/login");
@@ -30,17 +32,24 @@ export default async function ExpensesPage() {
   const now = new Date();
   const month = monthRangeTz(now);
 
+  // Los ingresos solo se muestran a quien puede verlos completos: para el
+  // resto la base de datos filtra los pagos y la "ganancia" saldría falsa
+  // (ingresos parciales menos gastos totales = pérdida inventada).
+  const seeRevenue = me.role === "owner" && canAccess(me, "payments");
+
   const [{ data: expenses }, { data: monthPays }] = await Promise.all([
     supabase
       .from("expenses")
       .select("*")
       .order("expense_date", { ascending: false })
       .limit(500),
-    supabase
-      .from("payments")
-      .select("amount")
-      .gte("paid_at", month.from)
-      .lt("paid_at", month.to),
+    seeRevenue
+      ? supabase
+          .from("payments")
+          .select("amount")
+          .gte("paid_at", month.from)
+          .lt("paid_at", month.to)
+      : Promise.resolve({ data: null }),
   ]);
 
   const all = (expenses ?? []) as Expense[];
@@ -65,28 +74,43 @@ export default async function ExpensesPage() {
         title={t("Expenses")}
         sub={t("Track spending and estimated profit")}
       />
-      <div className="mb-[18px] grid grid-cols-1 gap-3.5 sm:grid-cols-3">
+      <div
+        className={`mb-[18px] grid grid-cols-1 gap-3.5 ${
+          seeRevenue ? "sm:grid-cols-3" : "sm:grid-cols-2"
+        }`}
+      >
         <StatCard
           label={t("Month expenses")}
           value={fmtMoney(monthExp)}
           hint={`${monthExps.length} ${t("entries")}`}
         />
-        <StatCard
-          label={t("Month revenue")}
-          value={fmtMoney(monthRev)}
-          hint={t("income")}
-          hintColor="#5a9f6a"
-        />
-        <StatCard
-          label={t("Est. profit")}
-          value={fmtMoney(profit)}
-          hint={
-            monthRev > 0
-              ? Math.round((profit / monthRev) * 100) + t("% margin")
-              : "—"
-          }
-          gold
-        />
+        {seeRevenue ? (
+          <>
+            <StatCard
+              label={t("Month revenue")}
+              value={fmtMoney(monthRev)}
+              hint={t("income")}
+              hintColor="#5a9f6a"
+            />
+            <StatCard
+              label={t("Est. profit")}
+              value={fmtMoney(profit)}
+              hint={
+                monthRev > 0
+                  ? Math.round((profit / monthRev) * 100) + t("% margin")
+                  : "—"
+              }
+              gold
+            />
+          </>
+        ) : (
+          <StatCard
+            label={t("Entries this month")}
+            value={String(monthExps.length)}
+            hint={t("expenses")}
+            gold
+          />
+        )}
       </div>
       <div className="grid grid-cols-1 gap-[18px] lg:grid-cols-[1fr_1.4fr]">
         <Card className="p-[18px]">

@@ -2,28 +2,25 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { Card } from "@/components/PageHeader";
-import { Modal, inputCls, PrimaryBtn, GhostBtn } from "@/components/ui/Modal";
+import { Modal, PrimaryBtn, GhostBtn } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toaster";
 import { useLang } from "@/components/LangProvider";
 import { ROLE_LABEL } from "@/lib/roles";
-import { saveWorkHours } from "./actions";
+import {
+  WEEK,
+  draftFrom,
+  WeekDraftFields,
+  WorkHoursEditor,
+  type Draft,
+  type DraftDay,
+} from "@/components/WorkHoursEditor";
 import type { Profile, WorkHours } from "@/lib/types";
-
-// Semana visual lunes→domingo (las llaves siguen el formato de opening_hours)
-const WEEK: { key: string; label: string }[] = [
-  { key: "mon", label: "Monday" },
-  { key: "tue", label: "Tuesday" },
-  { key: "wed", label: "Wednesday" },
-  { key: "thu", label: "Thursday" },
-  { key: "fri", label: "Friday" },
-  { key: "sat", label: "Saturday" },
-  { key: "sun", label: "Sunday" },
-];
 
 type Member = Pick<
   Profile,
-  "id" | "full_name" | "role" | "specialty" | "work_hours"
+  "id" | "full_name" | "role" | "specialties" | "work_hours"
 >;
 
 export function ScheduleClient({
@@ -42,15 +39,21 @@ export function ScheduleClient({
   if (!team) {
     return (
       <div className="max-w-[560px]">
-        <ScheduleEditorCard member={me} salonHours={salonHours} />
+        <Card className="flex flex-col gap-3.5 p-[18px]">
+          <div className="font-serif text-lg font-semibold">
+            {t("My schedule")}
+          </div>
+          <WorkHoursEditor member={me} salonHours={salonHours} />
+        </Card>
       </div>
     );
   }
 
-  // Vista owner: grilla de todo el equipo, cada quien editable
+  // Vista owner: horario del salón + grilla del equipo
   return (
     <>
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
+        <SalonHoursCard salonHours={salonHours} />
         {team.map((m) => (
           <Card key={m.id} className="p-[18px]">
             <div className="mb-1 flex items-start justify-between">
@@ -58,7 +61,7 @@ export function ScheduleClient({
                 <div className="text-[14px] font-medium">{m.full_name}</div>
                 <div className="text-[11px] text-muted">
                   {t(ROLE_LABEL[m.role])}
-                  {m.specialty ? ` · ${m.specialty}` : ""}
+                  {m.specialties?.length ? ` · ${m.specialties.join(", ")}` : ""}
                 </div>
               </div>
               <button
@@ -74,15 +77,90 @@ export function ScheduleClient({
       </div>
 
       {editing && (
-        <ScheduleEditorModal
-          member={editing}
-          salonHours={salonHours}
+        <Modal
+          title={editing.full_name}
           onClose={() => setEditing(null)}
-        />
+          width={480}
+          footer={
+            <GhostBtn onClick={() => setEditing(null)} className="flex-1">
+              {t("Close")}
+            </GhostBtn>
+          }
+        >
+          <WorkHoursEditor
+            member={editing}
+            salonHours={salonHours}
+            onSaved={() => setEditing(null)}
+          />
+        </Modal>
       )}
     </>
   );
 }
+
+// ---------- Horario del salón (solo owner) ----------
+
+function SalonHoursCard({ salonHours }: { salonHours: WorkHours }) {
+  const [draft, setDraft] = useState<Draft>(() =>
+    draftFrom(salonHours, salonHours)
+  );
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
+  const router = useRouter();
+  const { t } = useLang();
+
+  function setDay(key: string, patch: Partial<DraftDay>) {
+    setDraft((d) => ({ ...d, [key]: { ...d[key], ...patch } }));
+  }
+
+  async function save() {
+    const hours: WorkHours = {};
+    for (const { key, label } of WEEK) {
+      const d = draft[key];
+      if (!d.on) {
+        hours[key] = null;
+        continue;
+      }
+      if (d.start >= d.end) {
+        toast(`${t(label)}: ${t("Start must be before end")}`);
+        return;
+      }
+      hours[key] = [d.start, d.end];
+    }
+    setSaving(true);
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("salon_settings")
+      .update({ opening_hours: hours })
+      .eq("id", true);
+    setSaving(false);
+    if (error) {
+      toast(t("Update failed:") + " " + error.message);
+      return;
+    }
+    toast(t("Salon hours saved"));
+    router.refresh();
+  }
+
+  return (
+    <Card className="border-gold-light p-[18px]">
+      <div className="mb-1 font-serif text-lg font-semibold text-gold-dark">
+        {t("Salon hours")}
+      </div>
+      <div className="mb-3 text-[11px] leading-relaxed text-muted">
+        {t("Online booking only offers times inside these hours")}
+      </div>
+      <div className="flex flex-col gap-2">
+        <WeekDraftFields draft={draft} setDay={setDay} />
+      </div>
+      <PrimaryBtn onClick={save} loading={saving} className="mt-3.5 w-full">
+        {t("Save schedule")}
+      </PrimaryBtn>
+    </Card>
+  );
+}
+
+// ---------- Resumen semanal (solo lectura, en la grilla del owner) ----------
 
 function WeekSummary({
   hours,
@@ -113,195 +191,5 @@ function WeekSummary({
         );
       })}
     </div>
-  );
-}
-
-/** Estado editable de la semana; null en un día = cerrado */
-type DraftDay = { on: boolean; start: string; end: string };
-type Draft = Record<string, DraftDay>;
-
-function draftFrom(hours: WorkHours | null, salonHours: WorkHours): Draft {
-  const base = hours ?? salonHours;
-  const out: Draft = {};
-  for (const { key } of WEEK) {
-    const d = base[key] ?? null;
-    out[key] = d
-      ? { on: true, start: d[0], end: d[1] }
-      : { on: false, start: "09:00", end: "18:00" };
-  }
-  return out;
-}
-
-function ScheduleEditor({
-  member,
-  salonHours,
-  onSaved,
-}: {
-  member: Pick<Profile, "id" | "work_hours">;
-  salonHours: WorkHours;
-  onSaved?: () => void;
-}) {
-  const [custom, setCustom] = useState(member.work_hours !== null);
-  const [draft, setDraft] = useState<Draft>(() =>
-    draftFrom(member.work_hours, salonHours)
-  );
-  const [saving, setSaving] = useState(false);
-  const toast = useToast();
-  const router = useRouter();
-  const { t } = useLang();
-
-  function setDay(key: string, patch: Partial<DraftDay>) {
-    setDraft((d) => ({ ...d, [key]: { ...d[key], ...patch } }));
-  }
-
-  async function save() {
-    let hours: WorkHours | null = null;
-    if (custom) {
-      hours = {};
-      for (const { key, label } of WEEK) {
-        const d = draft[key];
-        if (!d.on) {
-          hours[key] = null;
-          continue;
-        }
-        if (d.start >= d.end) {
-          toast(`${t(label)}: ${t("Start must be before end")}`);
-          return;
-        }
-        hours[key] = [d.start, d.end];
-      }
-    }
-    setSaving(true);
-    const res = await saveWorkHours(member.id, hours);
-    setSaving(false);
-    if (res.error) {
-      toast(res.error);
-      return;
-    }
-    toast(t("Schedule saved"));
-    router.refresh();
-    onSaved?.();
-  }
-
-  return (
-    <>
-      <div className="flex gap-2">
-        <button
-          onClick={() => setCustom(false)}
-          className={`h-8 flex-1 cursor-pointer rounded-[10px] border text-[12px] font-medium ${
-            !custom
-              ? "border-gold-light bg-gold-pale text-gold-deep"
-              : "border-line-2 bg-card text-muted"
-          }`}
-        >
-          {t("Use salon hours")}
-        </button>
-        <button
-          onClick={() => setCustom(true)}
-          className={`h-8 flex-1 cursor-pointer rounded-[10px] border text-[12px] font-medium ${
-            custom
-              ? "border-gold-light bg-gold-pale text-gold-deep"
-              : "border-line-2 bg-card text-muted"
-          }`}
-        >
-          {t("Set custom schedule")}
-        </button>
-      </div>
-
-      {custom && (
-        <div className="mt-1 flex flex-col gap-2">
-          {WEEK.map(({ key, label }) => {
-            const d = draft[key];
-            const salon = salonHours[key] ?? null;
-            return (
-              <div key={key} className="flex items-center gap-2.5">
-                <button
-                  onClick={() => setDay(key, { on: !d.on })}
-                  className={`h-9 w-[104px] flex-none cursor-pointer rounded-[10px] border text-[12px] ${
-                    d.on
-                      ? "border-gold-light bg-gold-pale font-medium text-gold-deep"
-                      : "border-line-2 bg-card text-faint"
-                  }`}
-                >
-                  {t(label)}
-                </button>
-                {d.on ? (
-                  <>
-                    <input
-                      type="time"
-                      value={d.start}
-                      onChange={(e) => setDay(key, { start: e.target.value })}
-                      className={`${inputCls} !h-9 flex-1 !px-2 text-center`}
-                    />
-                    <span className="text-faint">–</span>
-                    <input
-                      type="time"
-                      value={d.end}
-                      onChange={(e) => setDay(key, { end: e.target.value })}
-                      className={`${inputCls} !h-9 flex-1 !px-2 text-center`}
-                    />
-                  </>
-                ) : (
-                  <span className="flex-1 text-[11.5px] text-faint">
-                    {t("Closed")}
-                    {salon && (
-                      <span className="ml-2 text-[10.5px]">
-                        {t("Salon:")} {salon[0]} – {salon[1]}
-                      </span>
-                    )}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <PrimaryBtn onClick={save} loading={saving} className="mt-2">
-        {t("Save schedule")}
-      </PrimaryBtn>
-    </>
-  );
-}
-
-function ScheduleEditorCard({
-  member,
-  salonHours,
-}: {
-  member: Profile;
-  salonHours: WorkHours;
-}) {
-  const { t } = useLang();
-  return (
-    <Card className="flex flex-col gap-3.5 p-[18px]">
-      <div className="font-serif text-lg font-semibold">{t("My schedule")}</div>
-      <ScheduleEditor member={member} salonHours={salonHours} />
-    </Card>
-  );
-}
-
-function ScheduleEditorModal({
-  member,
-  salonHours,
-  onClose,
-}: {
-  member: Member;
-  salonHours: WorkHours;
-  onClose: () => void;
-}) {
-  const { t } = useLang();
-  return (
-    <Modal
-      title={member.full_name}
-      onClose={onClose}
-      width={480}
-      footer={
-        <GhostBtn onClick={onClose} className="flex-1">
-          {t("Close")}
-        </GhostBtn>
-      }
-    >
-      <ScheduleEditor member={member} salonHours={salonHours} onSaved={onClose} />
-    </Modal>
   );
 }

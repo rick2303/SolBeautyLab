@@ -26,6 +26,7 @@ export function InspoBoardModal({
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [uploading, setUploading] = useState(false);
   const [lightbox, setLightbox] = useState<Photo | null>(null);
+  const [confirmDel, setConfirmDel] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
   const { t } = useLang();
@@ -75,11 +76,11 @@ export function InspoBoardModal({
         .upload(`${appt.id}/${Date.now()}-${safe}`, file, {
           cacheControl: "3600",
         });
-      if (error) toast("Upload failed: " + error.message);
+      if (error) toast(t("Upload failed:") + " " + error.message);
     }
     setUploading(false);
     if (fileRef.current) fileRef.current.value = "";
-    toast("Photo added ✨");
+    toast(t("Photo added ✓"));
     load();
   }
 
@@ -89,12 +90,13 @@ export function InspoBoardModal({
       .from(BUCKET)
       .remove([`${appt.id}/${photo.name}`]);
     if (error) {
-      toast("Delete failed: " + error.message);
+      toast(t("Delete failed:") + " " + error.message);
       return;
     }
     setLightbox(null);
+    setConfirmDel(false);
     setPhotos((p) => p.filter((x) => x.name !== photo.name));
-    toast("Photo removed");
+    toast(t("Photo removed"));
   }
 
   const full = photos.length >= MAX_PHOTOS;
@@ -172,7 +174,13 @@ export function InspoBoardModal({
       </div>
 
       {lightbox && (
-        <ModalShell onClose={() => setLightbox(null)} width={720}>
+        <ModalShell
+          onClose={() => {
+            setLightbox(null);
+            setConfirmDel(false);
+          }}
+          width={720}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={lightbox.url}
@@ -181,13 +189,22 @@ export function InspoBoardModal({
           />
           <div className="flex flex-none items-center justify-between px-5 py-3">
             <button
-              onClick={() => remove(lightbox)}
-              className="h-9 cursor-pointer rounded-[10px] border border-[#e9d6d6] bg-[#fbf3f3] px-3.5 text-[12px] font-medium text-[#b06a6a]"
+              onClick={() =>
+                confirmDel ? remove(lightbox) : setConfirmDel(true)
+              }
+              className={`h-9 cursor-pointer rounded-[10px] border px-3.5 text-[12px] font-medium ${
+                confirmDel
+                  ? "border-[#b06a6a] bg-[#b06a6a] text-white"
+                  : "border-[#e9d6d6] bg-[#fbf3f3] text-[#b06a6a]"
+              }`}
             >
-              {t("Delete photo")}
+              {confirmDel ? t("Tap again to delete") : t("Delete photo")}
             </button>
             <button
-              onClick={() => setLightbox(null)}
+              onClick={() => {
+                setLightbox(null);
+                setConfirmDel(false);
+              }}
               className="h-9 cursor-pointer rounded-[10px] border border-[#ece2d0] bg-white px-3.5 text-[12px] text-[#8a8178]"
             >
               {t("Close")}

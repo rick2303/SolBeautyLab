@@ -11,7 +11,7 @@ interface Wall {
   min: number;
 }
 
-function wallParts(tz: string, date: Date = new Date()): Wall {
+export function wallParts(tz: string, date: Date = new Date()): Wall {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
     year: "numeric",
@@ -33,7 +33,7 @@ function wallParts(tz: string, date: Date = new Date()): Wall {
 }
 
 /** Instante UTC en el que el reloj de pared de `tz` marca la fecha/hora dada */
-function utcFromWall(
+export function utcFromWall(
   tz: string,
   y: number,
   m: number,

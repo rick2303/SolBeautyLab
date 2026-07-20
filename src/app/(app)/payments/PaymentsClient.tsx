@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Modal, Field, inputCls, PrimaryBtn, GhostBtn } from "@/components/ui/Modal";
 import { Pagination, PAGE_SIZE } from "@/components/ui/Pagination";
 import { useToast } from "@/components/ui/Toaster";
+import { useLang } from "@/components/LangProvider";
 import {
   avatarFor,
   fmtDateShort,
@@ -40,6 +41,7 @@ export function PaymentsClient({
   const [open, setOpen] = useState(false);
   const [clientFilter, setClientFilter] = useState("");
   const [page, setPage] = useState(0);
+  const { t } = useLang();
 
   const visible = clientFilter
     ? payments.filter((p) => p.client_id === clientFilter)
@@ -50,7 +52,7 @@ export function PaymentsClient({
     <>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2.5">
         <div className="font-serif text-[19px] font-semibold">
-          Payment history
+          {t("Payment history")}
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           <select
@@ -61,7 +63,7 @@ export function PaymentsClient({
             }}
             className="h-9 rounded-[20px] border border-[#ece2d0] bg-card px-3 text-[12.5px] text-body outline-none"
           >
-            <option value="">All clients</option>
+            <option value="">{t("All clients")}</option>
             {clients.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.full_name}
@@ -72,14 +74,16 @@ export function PaymentsClient({
             onClick={() => setOpen(true)}
             className="grad-gold h-9 cursor-pointer rounded-[20px] border-none px-4 text-[12.5px] font-medium text-white"
           >
-            + Record payment
+            {t("+ Record payment")}
           </button>
         </div>
       </div>
       <div className="overflow-hidden rounded-[14px] border border-line bg-card">
         {visible.length === 0 && (
           <div className="py-10 text-center text-[13px] text-faint">
-            {clientFilter ? "No payments for this client" : "No payments recorded yet"}
+            {clientFilter
+              ? t("No payments for this client")
+              : t("No payments recorded yet")}
           </div>
         )}
         {pageItems.map((p) => (
@@ -95,7 +99,7 @@ export function PaymentsClient({
             </div>
             <div className="flex-1">
               <div className="text-[13.5px] font-medium">
-                {p.clients?.full_name ?? "Client"}
+                {p.clients?.full_name ?? t("Client")}
               </div>
               <div className="text-[11px] text-muted">
                 {p.appointments?.services?.name ?? "—"}
@@ -105,7 +109,7 @@ export function PaymentsClient({
               className="rounded-[20px] px-2.5 py-1 text-[10.5px]"
               style={METHOD_CHIP[p.method]}
             >
-              {METHOD_LABEL[p.method]}
+              {t(METHOD_LABEL[p.method])}
             </span>
             <div className="w-[70px] text-right text-[11.5px] text-muted">
               {fmtDateShort(p.paid_at)}
@@ -143,11 +147,12 @@ function RecordPaymentModal({
   const [saving, setSaving] = useState(false);
   const toast = useToast();
   const router = useRouter();
+  const { t } = useLang();
 
   async function save() {
     const amt = parseFloat(amount.replace(/[^0-9.]/g, "")) || 0;
     if (!clientId || !amt) {
-      toast("Add client & amount");
+      toast(t("Add client & amount"));
       return;
     }
     setSaving(true);
@@ -160,31 +165,31 @@ function RecordPaymentModal({
     });
     setSaving(false);
     if (error) {
-      toast("Could not save: " + error.message);
+      toast(t("Could not save:") + " " + error.message);
       return;
     }
-    toast("Payment recorded");
+    toast(t("Payment recorded"));
     onClose();
     router.refresh();
   }
 
   return (
     <Modal
-      title="Record payment"
+      title={t("Record payment")}
       onClose={onClose}
       width={420}
       footer={
         <>
           <GhostBtn onClick={onClose} className="flex-1">
-            Cancel
+            {t("Cancel")}
           </GhostBtn>
           <PrimaryBtn onClick={save} loading={saving} className="flex-[2]">
-            {saving ? "Saving…" : "Save payment"}
+            {saving ? t("Saving…") : t("Save payment")}
           </PrimaryBtn>
         </>
       }
     >
-      <Field label="Client">
+      <Field label={t("Client")}>
         <select
           value={clientId}
           onChange={(e) => setClientId(e.target.value)}
@@ -197,7 +202,7 @@ function RecordPaymentModal({
           ))}
         </select>
       </Field>
-      <Field label="Amount">
+      <Field label={t("Amount")}>
         <input
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
@@ -205,7 +210,7 @@ function RecordPaymentModal({
           className={inputCls}
         />
       </Field>
-      <Field label="Method">
+      <Field label={t("Method")}>
         <div className="flex flex-wrap gap-2">
           {METHODS.map((m) => (
             <button
@@ -217,7 +222,7 @@ function RecordPaymentModal({
                   : "border border-input bg-white text-[#8a8178]"
               }`}
             >
-              {METHOD_LABEL[m]}
+              {t(METHOD_LABEL[m])}
             </button>
           ))}
         </div>

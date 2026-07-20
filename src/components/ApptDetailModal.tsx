@@ -91,7 +91,7 @@ export function ApptDetailModal({
       .update({ status: st, updated_at: new Date().toISOString() })
       .eq("id", appt.id);
     if (error) {
-      toast("Update failed: " + error.message);
+      toast(t("Update failed:") + " " + error.message);
       return;
     }
     router.refresh();
@@ -100,29 +100,35 @@ export function ApptDetailModal({
       setMode("charge");
       return;
     }
-    toast("Marked " + STATUS_LABEL[st]);
+    toast(t("Marked") + " " + t(STATUS_LABEL[st]));
   }
 
   async function chargeNow() {
     const amt = parseFloat(amount.replace(/[^0-9.]/g, "")) || 0;
     if (!amt) {
-      toast("Enter the amount");
+      toast(t("Enter the amount"));
       return;
     }
     setSaving(true);
     const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     const { error } = await supabase.from("payments").insert({
       appointment_id: appt.id,
       client_id: appt.client_id,
       amount: amt,
       method,
+      // Sin esto el pago queda sin dueño y quien lo registró no vuelve a
+      // verlo (la política de pagos filtra por técnico o por recorded_by)
+      recorded_by: user?.id,
     });
     setSaving(false);
     if (error) {
-      toast("Payment failed: " + error.message);
+      toast(t("Payment failed:") + " " + error.message);
       return;
     }
-    toast(`Payment of ${fmtMoney(amt)} recorded ✓`);
+    toast(`${t("Payment recorded")} · ${fmtMoney(amt)} ✓`);
     router.refresh();
     onClose();
   }
@@ -141,10 +147,10 @@ export function ApptDetailModal({
       .eq("id", appt.id);
     setSaving(false);
     if (error) {
-      toast("Update failed: " + error.message);
+      toast(t("Update failed:") + " " + error.message);
       return;
     }
-    toast("Appointment rescheduled");
+    toast(t("Appointment rescheduled"));
     router.refresh();
     onClose();
   }
@@ -171,7 +177,7 @@ export function ApptDetailModal({
           {fmtMoney(appt.price)}
           {alreadyPaid && (
             <span className="ml-2 rounded-[20px] bg-[#eaf5ec] px-2 py-0.5 text-[10px] text-[#4a7d57]">
-              PAID
+              {t("PAID")}
             </span>
           )}
         </div>
@@ -181,7 +187,7 @@ export function ApptDetailModal({
         {mode === "status" && (
           <>
             <div className="mb-2.5 text-[11px] uppercase tracking-[0.06em] text-muted">
-              Set status
+              {t("Set status")}
             </div>
             <div className="grid grid-cols-2 gap-2">
               {SETTABLE.map((st) => {
@@ -199,7 +205,7 @@ export function ApptDetailModal({
                       fontWeight: active ? 500 : 400,
                     }}
                   >
-                    {STATUS_LABEL[st]}
+                    {t(STATUS_LABEL[st])}
                   </button>
                 );
               })}
@@ -209,14 +215,14 @@ export function ApptDetailModal({
                 onClick={() => setMode("edit")}
                 className="h-[42px] flex-1 cursor-pointer rounded-xl border border-[#ece2d0] bg-white text-[13px] font-medium text-gold-dark"
               >
-                Reschedule / reassign
+                {t("Reschedule / reassign")}
               </button>
               {canCharge && status === "completed" && !alreadyPaid && (
                 <button
                   onClick={() => setMode("charge")}
                   className="grad-gold h-[42px] flex-1 cursor-pointer rounded-xl border-none text-[13px] font-medium text-white"
                 >
-                  Charge {fmtMoney(appt.price)}
+                  {t("Charge")} {fmtMoney(appt.price)}
                 </button>
               )}
             </div>
@@ -226,13 +232,13 @@ export function ApptDetailModal({
         {mode === "charge" && (
           <div className="anim-fade">
             <div className="mb-1 font-serif text-lg font-semibold">
-              Service completed ✨
+              {t("Service completed ✓")}
             </div>
             <div className="mb-3.5 text-[12px] text-muted">
-              Record the payment for this visit
+              {t("Record the payment for this visit")}
             </div>
             <div className="mb-1.5 text-[11px] uppercase tracking-[0.06em] text-muted">
-              Amount
+              {t("Amount")}
             </div>
             <input
               value={amount}
@@ -241,7 +247,7 @@ export function ApptDetailModal({
               className={inputCls}
             />
             <div className="mb-1.5 mt-3 text-[11px] uppercase tracking-[0.06em] text-muted">
-              Method
+              {t("Method")}
             </div>
             <div className="flex flex-wrap gap-2">
               {METHODS.map((m) => (
@@ -254,19 +260,19 @@ export function ApptDetailModal({
                       : "border border-input bg-white text-[#8a8178]"
                   }`}
                 >
-                  {METHOD_LABEL[m]}
+                  {t(METHOD_LABEL[m])}
                 </button>
               ))}
             </div>
             <div className="mt-4 flex gap-2.5">
               <button
                 onClick={() => {
-                  toast("Marked Completed");
+                  toast(t("Marked") + " " + t(STATUS_LABEL.completed));
                   onClose();
                 }}
                 className="h-[42px] flex-1 cursor-pointer rounded-xl border border-[#ece2d0] bg-white text-[13px] text-[#8a8178]"
               >
-                Skip
+                {t("Skip")}
               </button>
               <button
                 onClick={chargeNow}
@@ -274,7 +280,7 @@ export function ApptDetailModal({
                 className="grad-gold h-[42px] flex-[2] cursor-pointer rounded-xl border-none text-[13px] font-medium text-white disabled:opacity-60"
               >
                 {saving && <span className="spinner mr-2" />}
-                {saving ? "Saving…" : "Record payment"}
+                {saving ? t("Saving…") : t("Record payment")}
               </button>
             </div>
           </div>
@@ -283,7 +289,7 @@ export function ApptDetailModal({
         {mode === "edit" && (
           <div className="anim-fade">
             <div className="mb-2.5 text-[11px] uppercase tracking-[0.06em] text-muted">
-              Reschedule
+              {t("Reschedule")}
             </div>
             <div className="flex gap-2.5">
               <input
@@ -301,7 +307,7 @@ export function ApptDetailModal({
             </div>
             <div className="mt-3">
               <div className="mb-1.5 text-[11px] uppercase tracking-[0.06em] text-muted">
-                Technician
+                {t("Technician")}
               </div>
               <select
                 value={staffId}
@@ -310,7 +316,7 @@ export function ApptDetailModal({
               >
                 {staffOpts.length === 0 && (
                   <option value={appt.staff_id}>
-                    {appt.profiles?.full_name ?? "Loading…"}
+                    {appt.profiles?.full_name ?? t("Loading…")}
                   </option>
                 )}
                 {staffOpts.map((s) => (
@@ -325,7 +331,7 @@ export function ApptDetailModal({
                 onClick={() => setMode("status")}
                 className="h-[42px] flex-1 cursor-pointer rounded-xl border border-[#ece2d0] bg-white text-[13px] text-[#8a8178]"
               >
-                Back
+                {t("Back")}
               </button>
               <button
                 onClick={reschedule}
@@ -333,7 +339,7 @@ export function ApptDetailModal({
                 className="grad-gold h-[42px] flex-[2] cursor-pointer rounded-xl border-none text-[13px] font-medium text-white disabled:opacity-60"
               >
                 {saving && <span className="spinner mr-2" />}
-                {saving ? "Saving…" : "Save changes"}
+                {saving ? t("Saving…") : t("Save changes")}
               </button>
             </div>
           </div>
