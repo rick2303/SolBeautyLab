@@ -59,6 +59,8 @@ export interface SalonSettings {
   whatsapp: string | null;
   instagram: string | null;
   address: string | null;
+  zelle_number: string | null; // a dónde enviar el depósito opcional del booking
+  zelle_name: string | null; //   nombre de la cuenta Zelle
 }
 
 export interface ServiceCategory {
@@ -111,6 +113,7 @@ export interface Appointment {
   price: number;
   status: AppointmentStatus;
   notes: string | null;
+  deposit_url: string | null; // comprobante de depósito (imagen), opcional
 }
 
 /** Cita con joins (clients/services/profiles embebidos por PostgREST) */
@@ -127,6 +130,7 @@ export interface Payment {
   amount: number;
   method: PaymentMethod;
   paid_at: string;
+  staff_id: string | null; // a nombre de quién cuenta el ingreso (null = de quien lo registró)
   notes: string | null;
 }
 

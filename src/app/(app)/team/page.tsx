@@ -30,7 +30,10 @@ export default async function TeamPage() {
         .select("staff_id, price, status, starts_at")
         .gte("starts_at", month.from)
         .lt("starts_at", month.to),
-      supabase.from("salon_settings").select("opening_hours").limit(1),
+      supabase
+        .from("salon_settings")
+        .select("opening_hours, default_country")
+        .limit(1),
       supabase
         .from("service_categories")
         .select("id, name, icon")
@@ -65,6 +68,7 @@ export default async function TeamPage() {
         me={me}
         rows={rows}
         salonHours={salonHours}
+        defaultCountry={settings?.[0]?.default_country ?? "US"}
         categories={
           (categories ?? []) as Pick<ServiceCategory, "id" | "name" | "icon">[]
         }

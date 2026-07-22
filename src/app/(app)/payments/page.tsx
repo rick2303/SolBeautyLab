@@ -24,14 +24,22 @@ export default async function PaymentsPage() {
   const today = dayRangeTz(now);
   const month = monthRangeTz(now);
 
-  const [{ data: payments }, { data: clients }] = await Promise.all([
-    supabase
-      .from("payments")
-      .select("*, clients(full_name), appointments(services(name))")
-      .order("paid_at", { ascending: false })
-      .limit(500),
-    supabase.from("clients").select("id, full_name").order("full_name"),
-  ]);
+  const [{ data: payments }, { data: clients }, { data: staff }] =
+    await Promise.all([
+      supabase
+        .from("payments")
+        .select(
+          "*, clients(full_name), appointments(services(name)), staff:profiles!staff_id(full_name)"
+        )
+        .order("paid_at", { ascending: false })
+        .limit(500),
+      supabase.from("clients").select("id, full_name").order("full_name"),
+      supabase
+        .from("profiles")
+        .select("id, full_name")
+        .eq("is_active", true)
+        .order("full_name"),
+    ]);
 
   const all = payments ?? [];
   const todayPays = all.filter(
@@ -83,7 +91,12 @@ export default async function PaymentsPage() {
           gold
         />
       </div>
-      <PaymentsClient payments={all} clients={clients ?? []} me={me} />
+      <PaymentsClient
+        payments={all}
+        clients={clients ?? []}
+        staff={staff ?? []}
+        me={me}
+      />
     </div>
   );
 }

@@ -118,6 +118,8 @@ function CountrySelect({
 }
 import { inputCls } from "@/components/ui/Modal";
 import { LangToggle, useLocalLang } from "@/components/LangProvider";
+import { DepositField } from "@/components/DepositField";
+import { downscaleToDataUrl } from "@/lib/image";
 import { fmtMoney } from "@/lib/format";
 import { effectiveDayHours, DOW_KEYS } from "@/lib/schedule";
 import { SALON_TZ, utcFromWall, wallParts } from "@/lib/tz";
@@ -169,6 +171,9 @@ export function BookingClient({ data }: { data: BookingData }) {
   const [phoneCountry, setPhoneCountry] = useState<CountryCode | null>(null);
   const [email, setEmail] = useState("");
   const [emailTouched, setEmailTouched] = useState(false);
+  const [depositFile, setDepositFile] = useState<File | null>(null);
+  const [depositPreview, setDepositPreview] = useState<string | null>(null);
+  const [agreed, setAgreed] = useState(false); // términos y privacidad aceptados
   const [website, setWebsite] = useState(""); // honeypot anti-bots
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -295,6 +300,15 @@ export function BookingClient({ data }: { data: BookingData }) {
     }
     setSubmitting(true);
     setError("");
+    // Comprobante opcional: se reduce y viaja como data URL con la reserva.
+    let depositDataUrl: string | undefined;
+    if (depositFile) {
+      try {
+        depositDataUrl = await downscaleToDataUrl(depositFile);
+      } catch {
+        depositDataUrl = undefined; // si falla, se reserva sin comprobante
+      }
+    }
     const res = await createBooking({
       serviceId: service.id,
       staffId: tech.id,
@@ -303,6 +317,7 @@ export function BookingClient({ data }: { data: BookingData }) {
       phone: parsedPhone.number, // E.164 normalizado, ej. +12105550123
       email,
       website,
+      depositDataUrl,
     });
     setSubmitting(false);
     if (res.error) {
@@ -344,7 +359,9 @@ export function BookingClient({ data }: { data: BookingData }) {
               : `${fmtMoney(service.price)} · ${service.duration_min} min`}
           </div>
           <div className="mt-4 text-[12px] text-muted">
-            {t("We'll send you a reminder before your appointment")}
+            {t(
+              "If you need to change or cancel your appointment, reach us by phone or WhatsApp"
+            )}
           </div>
           <button
             onClick={() => {
@@ -755,6 +772,65 @@ export function BookingClient({ data }: { data: BookingData }) {
                   </div>
                 )}
               </div>
+              <div>
+                {data.zelle && (
+                  <div className="mb-2 rounded-xl border border-line bg-white px-3.5 py-2.5">
+                    <div className="text-[11px] text-muted">
+                      {t("Send the optional deposit via Zelle to:")}
+                    </div>
+                    <div className="mt-0.5 text-[13px] font-medium text-body">
+                      {data.zelle.number}
+                      {data.zelle.name ? ` · ${data.zelle.name}` : ""}
+                    </div>
+                  </div>
+                )}
+                <DepositField
+                  preview={depositPreview}
+                  label={t("Attach deposit receipt")}
+                  hint={t(
+                    "Optional — a small deposit as a sign of commitment to hold your appointment. It's not the full service payment, and it's deducted from your total on the day of your visit."
+                  )}
+                  onPick={(file, url) => {
+                    setDepositFile(file);
+                    setDepositPreview(url);
+                  }}
+                  onClear={() => {
+                    setDepositFile(null);
+                    setDepositPreview(null);
+                  }}
+                  disabled={submitting}
+                />
+              </div>
+              {/* Aceptar términos y privacidad — requisito para confirmar */}
+              <label className="flex cursor-pointer items-start gap-2.5 text-[12px] leading-relaxed text-body">
+                <input
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={(e) => setAgreed(e.target.checked)}
+                  disabled={submitting}
+                  className="mt-0.5 h-4 w-4 flex-none cursor-pointer accent-[#8a6526]"
+                />
+                <span>
+                  {t("I have read and accept the")}{" "}
+                  <a
+                    href="/terms"
+                    target="_blank"
+                    rel="noopener"
+                    className="font-medium text-gold-dark underline underline-offset-2"
+                  >
+                    {t("Terms & Conditions")}
+                  </a>{" "}
+                  {t("and the")}{" "}
+                  <a
+                    href="/privacy"
+                    target="_blank"
+                    rel="noopener"
+                    className="font-medium text-gold-dark underline underline-offset-2"
+                  >
+                    {t("Privacy Policy")}
+                  </a>
+                </span>
+              </label>
               {/* Honeypot — invisible para humanos */}
               <input
                 value={website}
@@ -773,7 +849,7 @@ export function BookingClient({ data }: { data: BookingData }) {
             )}
             <button
               onClick={submit}
-              disabled={submitting || !name.trim() || !phone.trim()}
+              disabled={submitting || !name.trim() || !phone.trim() || !agreed}
               className="grad-gold mt-4 h-12 w-full cursor-pointer rounded-[14px] border-none text-[15px] font-medium text-white disabled:opacity-50"
               style={{ boxShadow: "0 12px 24px -12px rgba(138,101,38,.9)" }}
             >

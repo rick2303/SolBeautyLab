@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/Toaster";
 import { useLang } from "@/components/LangProvider";
 import { inputCls, ModalShell } from "@/components/ui/Modal";
+import { DepositField, uploadDeposit } from "@/components/DepositField";
 import {
   fmtMoney,
   fmtTime,
@@ -55,6 +56,8 @@ export function ApptDetailModal({
   const [amount, setAmount] = useState(String(appt.price));
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [alreadyPaid, setAlreadyPaid] = useState(false);
+  const [depositUrl, setDepositUrl] = useState<string | null>(appt.deposit_url);
+  const [depositBusy, setDepositBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const toast = useToast();
   const router = useRouter();
@@ -131,6 +134,45 @@ export function ApptDetailModal({
     toast(`${t("Payment recorded")} · ${fmtMoney(amt)} ✓`);
     router.refresh();
     onClose();
+  }
+
+  async function attachDeposit(file: File) {
+    setDepositBusy(true);
+    const url = await uploadDeposit(file);
+    if (!url) {
+      setDepositBusy(false);
+      toast(t("Upload failed:") + " ");
+      return;
+    }
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("appointments")
+      .update({ deposit_url: url, updated_at: new Date().toISOString() })
+      .eq("id", appt.id);
+    setDepositBusy(false);
+    if (error) {
+      toast(t("Update failed:") + " " + error.message);
+      return;
+    }
+    setDepositUrl(url);
+    toast(t("Deposit receipt saved ✓"));
+    router.refresh();
+  }
+
+  async function removeDeposit() {
+    setDepositBusy(true);
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("appointments")
+      .update({ deposit_url: null, updated_at: new Date().toISOString() })
+      .eq("id", appt.id);
+    setDepositBusy(false);
+    if (error) {
+      toast(t("Update failed:") + " " + error.message);
+      return;
+    }
+    setDepositUrl(null);
+    router.refresh();
   }
 
   async function reschedule() {
@@ -224,6 +266,34 @@ export function ApptDetailModal({
                 >
                   {t("Charge")} {fmtMoney(appt.price)}
                 </button>
+              )}
+            </div>
+
+            <div className="mt-4 rounded-xl border border-line-2 p-3.5">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted">
+                  {t("Deposit receipt")}
+                </div>
+                {depositUrl && (
+                  <a
+                    href={depositUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11.5px] font-medium text-gold-dark"
+                  >
+                    {t("Open")}
+                  </a>
+                )}
+              </div>
+              <DepositField
+                preview={depositUrl}
+                label={t("Attach deposit receipt")}
+                onPick={(file) => attachDeposit(file)}
+                onClear={removeDeposit}
+                disabled={depositBusy}
+              />
+              {depositBusy && (
+                <div className="mt-1 text-[11px] text-muted">{t("Saving…")}</div>
               )}
             </div>
           </>

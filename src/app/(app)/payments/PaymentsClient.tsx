@@ -23,8 +23,10 @@ interface PaymentRow {
   amount: number;
   method: PaymentMethod;
   paid_at: string;
+  staff_id: string | null;
   clients: { full_name: string } | null;
   appointments: { services: { name: string } | null } | null;
+  staff: { full_name: string } | null;
 }
 
 const METHODS: PaymentMethod[] = ["cash", "card", "zelle", "venmo", "transfer"];
@@ -32,15 +34,23 @@ const METHODS: PaymentMethod[] = ["cash", "card", "zelle", "venmo", "transfer"];
 export function PaymentsClient({
   payments,
   clients,
+  staff,
   me,
 }: {
   payments: PaymentRow[];
   clients: Pick<Client, "id" | "full_name">[];
+  staff: Pick<Profile, "id" | "full_name">[];
   me: Profile;
 }) {
   const [open, setOpen] = useState(false);
   const [clientFilter, setClientFilter] = useState("");
   const [page, setPage] = useState(0);
+  // Aviso tras registrar un pago a nombre de otra persona: como ese pago no
+  // aparecerá en el historial ni en los ingresos de quien lo creó, se le
+  // confirma explícitamente a quién y por cuánto quedó registrado.
+  const [notice, setNotice] = useState<{ name: string; amount: number } | null>(
+    null
+  );
   const { t } = useLang();
 
   const visible = clientFilter
@@ -103,6 +113,9 @@ export function PaymentsClient({
               </div>
               <div className="text-[11px] text-muted">
                 {p.appointments?.services?.name ?? "—"}
+                {p.staff && p.staff_id !== me.id && (
+                  <> · ✧ {p.staff.full_name}</>
+                )}
               </div>
             </div>
             <span
@@ -124,9 +137,33 @@ export function PaymentsClient({
       {open && (
         <RecordPaymentModal
           clients={clients}
+          staff={staff}
           me={me}
           onClose={() => setOpen(false)}
+          onAssignedToOther={(name, amount) => setNotice({ name, amount })}
         />
+      )}
+      {notice && (
+        <Modal
+          title={t("Payment recorded")}
+          onClose={() => setNotice(null)}
+          width={400}
+          footer={
+            <PrimaryBtn onClick={() => setNotice(null)} className="flex-1">
+              {t("Got it")}
+            </PrimaryBtn>
+          }
+        >
+          <p className="text-[13.5px] leading-relaxed text-body">
+            {t("A payment was recorded for")}{" "}
+            <b>{notice.name}</b> · <b>{fmtMoney(notice.amount)}</b>
+          </p>
+          <p className="mt-2 text-[12px] leading-relaxed text-muted">
+            {t(
+              "It counts as income for that person and for the business — it won't appear in your payment history or your income."
+            )}
+          </p>
+        </Modal>
       )}
     </>
   );
@@ -134,14 +171,19 @@ export function PaymentsClient({
 
 function RecordPaymentModal({
   clients,
+  staff,
   me,
   onClose,
+  onAssignedToOther,
 }: {
   clients: Pick<Client, "id" | "full_name">[];
+  staff: Pick<Profile, "id" | "full_name">[];
   me: Profile;
   onClose: () => void;
+  onAssignedToOther: (name: string, amount: number) => void;
 }) {
   const [clientId, setClientId] = useState(clients[0]?.id ?? "");
+  const [staffId, setStaffId] = useState(me.id);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [saving, setSaving] = useState(false);
@@ -162,13 +204,23 @@ function RecordPaymentModal({
       amount: amt,
       method,
       recorded_by: me.id,
+      staff_id: staffId,
     });
     setSaving(false);
     if (error) {
       toast(t("Could not save:") + " " + error.message);
       return;
     }
-    toast(t("Payment recorded"));
+    // Si el pago quedó a nombre de otra persona y quien lo creó no es la
+    // dueña, RLS se lo oculta de inmediato: en vez del toast normal se abre
+    // un aviso con el nombre y el monto para que sepa que sí se guardó.
+    if (staffId !== me.id && me.role !== "owner") {
+      const name =
+        staff.find((s) => s.id === staffId)?.full_name ?? t("Staff");
+      onAssignedToOther(name, amt);
+    } else {
+      toast(t("Payment recorded"));
+    }
     onClose();
     router.refresh();
   }
@@ -198,6 +250,20 @@ function RecordPaymentModal({
           {clients.map((c) => (
             <option key={c.id} value={c.id}>
               {c.full_name}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label={t("Income for")}>
+        <select
+          value={staffId}
+          onChange={(e) => setStaffId(e.target.value)}
+          className={inputCls}
+        >
+          {staff.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.full_name}
+              {s.id === me.id ? ` ${t("(you)")}` : ""}
             </option>
           ))}
         </select>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Modal, Field, inputCls, PrimaryBtn, GhostBtn } from "@/components/ui/Modal";
@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/Toaster";
 import { useLang } from "@/components/LangProvider";
 import { fmtMoney, fmtTime } from "@/lib/format";
 import { effectiveDayHours, toMin, DOW_KEYS } from "@/lib/schedule";
+import { DepositField, uploadDeposit } from "@/components/DepositField";
 import { notifyInternalAppointment } from "@/app/(app)/appointment-actions";
 import type { Client, Profile, Service, WorkHours } from "@/lib/types";
 
@@ -32,6 +33,8 @@ export function AppointmentModal({
   const [staffId, setStaffId] = useState(isStaff ? me.id : staff[0]?.id ?? "");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState("10:00");
+  const [depositFile, setDepositFile] = useState<File | null>(null);
+  const [depositPreview, setDepositPreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [salonHours, setSalonHours] = useState<WorkHours | null>(null);
   const [techHours, setTechHours] = useState<WorkHours | null>(null);
@@ -110,6 +113,14 @@ export function AppointmentModal({
       return;
     }
 
+    // Sube el comprobante de depósito (si adjuntaron uno). No bloquea la
+    // cita: si la subida falla, se agenda igual sin comprobante.
+    let depositUrl: string | null = null;
+    if (depositFile) {
+      depositUrl = await uploadDeposit(depositFile);
+      if (!depositUrl) toast(t("Couldn't attach the receipt, booking anyway"));
+    }
+
     const { data: created, error } = await supabase
       .from("appointments")
       .insert({
@@ -121,6 +132,9 @@ export function AppointmentModal({
         price: service.price,
         status: "scheduled",
         created_by: me.id,
+        // Solo si hay comprobante: así una cita normal no se rompe aunque
+        // la migración 022 aún no se haya corrido.
+        ...(depositUrl ? { deposit_url: depositUrl } : {}),
       })
       .select("id")
       .single();
@@ -222,6 +236,21 @@ export function AppointmentModal({
           )}
         </div>
       )}
+      <Field label={t("Deposit receipt (optional)")}>
+        <DepositField
+          preview={depositPreview}
+          label={t("Attach deposit receipt")}
+          onPick={(file, url) => {
+            setDepositFile(file);
+            setDepositPreview(url);
+          }}
+          onClear={() => {
+            setDepositFile(null);
+            setDepositPreview(null);
+          }}
+          disabled={saving}
+        />
+      </Field>
     </Modal>
   );
 }

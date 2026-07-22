@@ -76,7 +76,7 @@ export function ClientsClient({
   }, [clients, query]);
 
   const sel = selId ? clients.find((c) => c.id === selId) ?? null : null;
-  const canAdd = me.role !== "staff";
+  const canAdd = true; // owner, recepción y staff pueden crear clientas
   const showMoney = me.role === "owner";
   const pageItems = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
@@ -213,7 +213,7 @@ function ClientDrawer({
   const [histPage, setHistPage] = useState(0);
   const [editing, setEditing] = useState(false);
   const { t } = useLang();
-  const canEdit = me.role !== "staff";
+  const canEdit = true; // owner, recepción y staff pueden editar clientas
   // La dueña ve el historial completo paginado; el resto del equipo solo
   // las 2 visitas más recientes (RLS ya limita las suyas).
   const isOwner = me.role === "owner";

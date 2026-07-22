@@ -20,6 +20,7 @@ const PERM_ITEMS = [
   ...EXTRA_PERMISSIONS,
 ];
 import { WorkHoursEditor } from "@/components/WorkHoursEditor";
+import { PhoneInput, normalizePhone } from "@/components/PhoneInput";
 import type { Profile, Role, ServiceCategory, WorkHours } from "@/lib/types";
 import { createTeamMember } from "./actions";
 
@@ -36,11 +37,13 @@ export function TeamClient({
   me,
   rows,
   salonHours,
+  defaultCountry,
   categories,
 }: {
   me: Profile;
   rows: Row[];
   salonHours: WorkHours;
+  defaultCountry: string;
   categories: Category[];
 }) {
   const [adding, setAdding] = useState(false);
@@ -132,6 +135,7 @@ export function TeamClient({
         <AddMemberModal
           salonHours={salonHours}
           categories={categories}
+          defaultCountry={defaultCountry}
           onClose={() => setAdding(false)}
         />
       )}
@@ -139,6 +143,7 @@ export function TeamClient({
         <ManageMemberModal
           member={editing}
           categories={categories}
+          defaultCountry={defaultCountry}
           onClose={() => setEditing(null)}
         />
       )}
@@ -161,10 +166,12 @@ interface CreatedMember {
 function AddMemberModal({
   salonHours,
   categories,
+  defaultCountry,
   onClose,
 }: {
   salonHours: WorkHours;
   categories: Category[];
+  defaultCountry: string;
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
@@ -185,6 +192,13 @@ function AddMemberModal({
       toast(t("Name, email & a 6-digit temp password are required"));
       return;
     }
+    // Igual que /book: si escribió algo, debe ser un número real; se guarda
+    // normalizado en E.164
+    const normPhone = phone.trim() ? normalizePhone(phone, defaultCountry) : "";
+    if (normPhone === null) {
+      toast(t("Enter a valid phone number"));
+      return;
+    }
     setSaving(true);
     const res = await createTeamMember({
       full_name: name,
@@ -192,7 +206,7 @@ function AddMemberModal({
       password,
       role,
       specialties,
-      phone,
+      phone: normPhone,
     });
     setSaving(false);
     if (res.error || !res.id) {
@@ -338,11 +352,10 @@ function AddMemberModal({
         </div>
       </div>
       <Field label={t("Phone (optional)")}>
-        <input
+        <PhoneInput
           value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          placeholder="+1 …"
-          className={inputCls}
+          onChange={setPhone}
+          defaultCountry={defaultCountry}
         />
       </Field>
       <Field label={t("Specialties (optional)")}>
@@ -424,13 +437,16 @@ function SpecialtySelect({
 function ManageMemberModal({
   member,
   categories,
+  defaultCountry,
   onClose,
 }: {
   member: Profile;
   categories: Category[];
+  defaultCountry: string;
   onClose: () => void;
 }) {
   const [name, setName] = useState(member.full_name);
+  const [phone, setPhone] = useState(member.phone ?? "");
   const [specialties, setSpecialties] = useState<string[]>(
     member.specialties ?? []
   );
@@ -459,12 +475,22 @@ function ManageMemberModal({
   }
 
   async function save() {
+    // Igual que /book: si escribió algo, debe ser un número real; se guarda
+    // normalizado en E.164
+    const normPhone = phone.trim()
+      ? normalizePhone(phone, defaultCountry)
+      : null;
+    if (phone.trim() && normPhone === null) {
+      toast(t("Enter a valid phone number"));
+      return;
+    }
     setSaving(true);
     const supabase = createClient();
     const { error } = await supabase
       .from("profiles")
       .update({
         full_name: name.trim() || member.full_name,
+        phone: normPhone,
         specialties,
         role,
         is_active: active,
@@ -501,6 +527,14 @@ function ManageMemberModal({
           value={name}
           onChange={(e) => setName(e.target.value)}
           className={inputCls}
+        />
+      </Field>
+
+      <Field label={t("Phone (optional)")}>
+        <PhoneInput
+          value={phone}
+          onChange={setPhone}
+          defaultCountry={defaultCountry}
         />
       </Field>
 

@@ -46,6 +46,9 @@ export async function updateSession(request: NextRequest) {
     isLogin ||
     pathname.startsWith("/book") ||
     pathname.startsWith("/reset-password") ||
+    // Legales: enlazadas desde el checkbox del booking público
+    pathname.startsWith("/terms") ||
+    pathname.startsWith("/privacy") ||
     // Confirmación de cita: enlace público que recibe la clienta por SMS
     pathname.startsWith("/c/") ||
     // Rutas de cron: protegidas por CRON_SECRET (Bearer), no por sesión

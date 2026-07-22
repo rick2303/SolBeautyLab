@@ -25,6 +25,8 @@ export function SettingsClient({
   const [whatsapp, setWhatsapp] = useState(settings.whatsapp ?? "");
   const [instagram, setInstagram] = useState(settings.instagram ?? "");
   const [address, setAddress] = useState(settings.address ?? "");
+  const [zelleNumber, setZelleNumber] = useState(settings.zelle_number ?? "");
+  const [zelleName, setZelleName] = useState(settings.zelle_name ?? "");
   const [saving, setSaving] = useState(false);
   // Las opciones de país se generan solo en el cliente: los nombres de
   // Intl.DisplayNames difieren entre el ICU del servidor y el del navegador
@@ -65,6 +67,8 @@ export function SettingsClient({
         whatsapp: whatsapp.trim() || null,
         instagram: instagram.trim().replace(/^@/, "") || null,
         address: address.trim() || null,
+        zelle_number: zelleNumber.trim() || null,
+        zelle_name: zelleName.trim() || null,
       })
       .eq("id", true);
     setSaving(false);
@@ -154,6 +158,36 @@ export function SettingsClient({
             rows={2}
             placeholder="1401 Northwest Hwy, Suite 105 · Garland, TX 75041"
             className="w-full rounded-xl border border-input bg-white px-3.5 py-2.5 text-sm text-ink outline-none"
+          />
+        </Field>
+      </Card>
+
+      {/* Depósito opcional (Zelle) mostrado en /book */}
+      <Card className="flex flex-col gap-3.5 p-[18px]">
+        <div>
+          <div className="font-serif text-lg font-semibold">
+            {t("Optional deposit (Zelle)")}
+          </div>
+          <div className="mt-0.5 text-[11px] text-muted">
+            {t(
+              "Shown in online booking next to the deposit receipt. Leave the number empty to hide it."
+            )}
+          </div>
+        </div>
+        <Field label={t("Zelle number")}>
+          <input
+            value={zelleNumber}
+            onChange={(e) => setZelleNumber(e.target.value)}
+            placeholder="(214) 451-8162"
+            className={inputCls}
+          />
+        </Field>
+        <Field label={t("Account name")}>
+          <input
+            value={zelleName}
+            onChange={(e) => setZelleName(e.target.value)}
+            placeholder="Martha Zamarron"
+            className={inputCls}
           />
         </Field>
       </Card>

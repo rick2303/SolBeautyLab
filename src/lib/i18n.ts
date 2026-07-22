@@ -205,6 +205,23 @@ export const ES: Record<string, string> = {
   "+ Record payment": "+ Registrar pago",
   "Save payment": "Guardar pago",
   "Payment recorded": "Pago registrado",
+  "Income for": "Ingreso a nombre de",
+  "(you)": "(tú)",
+  "Got it": "Entendido",
+  "A payment was recorded for": "Se registró un pago a nombre de",
+  "Send the optional deposit via Zelle to:":
+    "Envía el depósito opcional por Zelle a:",
+  "I have read and accept the": "He leído y acepto los",
+  "Terms & Conditions": "Términos y Condiciones",
+  "and the": "y la",
+  "Privacy Policy": "Política de Privacidad",
+  "Optional deposit (Zelle)": "Depósito opcional (Zelle)",
+  "Shown in online booking next to the deposit receipt. Leave the number empty to hide it.":
+    "Se muestra en el booking en línea junto al comprobante de depósito. Deja el número vacío para ocultarlo.",
+  "Zelle number": "Número de Zelle",
+  "Account name": "Nombre de la cuenta",
+  "It counts as income for that person and for the business — it won't appear in your payment history or your income.":
+    "Cuenta como ingreso para esa persona y para el negocio — no aparecerá en tu historial de pagos ni en tus ingresos.",
   "Add client & amount": "Elige clienta y monto",
   "No payments recorded yet": "Aún no hay pagos registrados",
   "No payments for this client": "Sin pagos de esta clienta",
@@ -345,6 +362,22 @@ export const ES: Record<string, string> = {
 
   // ---- Reminders ----
   "Automated reminders": "Recordatorios automáticos",
+  "This section isn't available yet": "Este apartado aún no está disponible",
+  "Automated reminders are coming soon. We'll turn them on here as soon as they're ready.":
+    "Los recordatorios automáticos estarán disponibles pronto. Los activaremos aquí en cuanto estén listos.",
+
+  // ---- Comprobante de depósito ----
+  Open: "Abrir",
+  Change: "Cambiar",
+  Remove: "Quitar",
+  "Deposit receipt": "Comprobante de depósito",
+  "Deposit receipt (optional)": "Comprobante de depósito (opcional)",
+  "Attach deposit receipt": "Adjuntar comprobante de depósito",
+  "Optional — a small deposit as a sign of commitment to hold your appointment. It's not the full service payment, and it's deducted from your total on the day of your visit.":
+    "Opcional — un pequeño depósito como muestra de compromiso para apartar tu cita. No es el pago total del servicio y se descuenta del total el día de tu cita.",
+  "Couldn't attach the receipt, booking anyway":
+    "No se pudo adjuntar el comprobante, se agenda igual",
+  "Deposit receipt saved ✓": "Comprobante guardado ✓",
   "SMS reminders · keep clients coming back":
     "Recordatorios por SMS · haz que tus clientas regresen",
   "Appointment reminder": "Recordatorio de cita",
@@ -415,8 +448,8 @@ export const ES: Record<string, string> = {
   "Times are in the salon's local time":
     "Los horarios están en la hora local del salón",
   "You're booked,": "¡Lista tu cita,",
-  "We'll send you a reminder before your appointment":
-    "Te enviaremos un recordatorio antes de tu cita",
+  "If you need to change or cancel your appointment, reach us by phone or WhatsApp":
+    "Si necesitas cambiar o cancelar tu cita, escríbenos por teléfono o WhatsApp",
   "Book another appointment": "Agendar otra cita",
   "Get notified the moment a client books":
     "Recibe un aviso apenas una clienta reserve",

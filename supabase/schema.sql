@@ -131,10 +131,12 @@ create table payments (
   method          payment_method not null default 'cash',
   paid_at         timestamptz not null default now(),
   recorded_by     uuid references profiles(id),
+  staff_id        uuid references profiles(id),      -- a nombre de quién cuenta el ingreso (023)
   notes           text
 );
 
 create index payments_paid_at_idx on payments (paid_at);
+create index payments_staff_idx on payments (staff_id);
 
 -- ============================================================
 -- 6. EXPENSES — gastos
@@ -284,12 +286,12 @@ create policy "services read"   on services for select to authenticated using (t
 create policy "services manage" on services for all to authenticated
   using (my_role() = 'owner') with check (my_role() = 'owner');
 
--- CLIENTS: staff lee; owner y receptionist crean/editan
+-- CLIENTS: todos leen; owner, receptionist y staff crean/editan; solo owner borra
 create policy "clients read" on clients for select to authenticated using (true);
 create policy "clients insert" on clients for insert to authenticated
-  with check (my_role() in ('owner','receptionist'));
+  with check (my_role() in ('owner','receptionist','staff'));
 create policy "clients update" on clients for update to authenticated
-  using (my_role() in ('owner','receptionist'));
+  using (my_role() in ('owner','receptionist','staff'));
 create policy "clients delete" on clients for delete to authenticated
   using (my_role() = 'owner');
 

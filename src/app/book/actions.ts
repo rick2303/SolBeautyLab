@@ -49,6 +49,8 @@ export interface BookingData {
     instagram: string | null;
     address: string | null;
   };
+  // A dónde enviar el depósito opcional; null = no se muestra en /book
+  zelle: { number: string; name: string | null } | null;
 }
 
 export async function getBookingData(): Promise<BookingData> {
@@ -88,6 +90,12 @@ export async function getBookingData(): Promise<BookingData> {
       instagram: settings?.[0]?.instagram ?? null,
       address: settings?.[0]?.address ?? null,
     },
+    zelle: settings?.[0]?.zelle_number
+      ? {
+          number: settings[0].zelle_number as string,
+          name: (settings[0].zelle_name as string | null) ?? null,
+        }
+      : null,
   };
 }
 
@@ -137,6 +145,32 @@ export interface BookingInput {
   phone: string;
   email: string;
   website?: string; // honeypot — los humanos lo dejan vacío
+  depositDataUrl?: string; // comprobante de depósito (data URL de imagen), opcional
+}
+
+/**
+ * Sube un comprobante en data URL al bucket con la service-role y devuelve la
+ * URL pública, o null. Nunca lanza: si algo falla, la reserva sigue sin foto.
+ */
+async function uploadDepositDataUrl(
+  db: ReturnType<typeof admin>,
+  dataUrl: string
+): Promise<string | null> {
+  try {
+    const m = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (!m) return null;
+    const buf = Buffer.from(m[2], "base64");
+    if (buf.length === 0 || buf.length > 4 * 1024 * 1024) return null; // máx 4MB
+    const ext = m[1].split("/")[1].replace(/[^a-z0-9]/gi, "") || "jpg";
+    const path = `${Date.now()}-${Math.round(buf.length)}-online.${ext}`;
+    const { error } = await db.storage
+      .from("deposit-photos")
+      .upload(path, buf, { contentType: m[1], cacheControl: "3600" });
+    if (error) return null;
+    return db.storage.from("deposit-photos").getPublicUrl(path).data.publicUrl;
+  } catch {
+    return null;
+  }
 }
 
 export async function createBooking(
@@ -300,6 +334,11 @@ export async function createBooking(
     };
   }
 
+  // Comprobante de depósito (si la clienta adjuntó uno). No bloquea la reserva.
+  const depositUrl = input.depositDataUrl
+    ? await uploadDepositDataUrl(db, input.depositDataUrl)
+    : null;
+
   // Reserva en línea → la cita nace CONFIRMADA (la clienta ya la solicitó)
   const { data: created, error } = await db
     .from("appointments")
@@ -311,6 +350,9 @@ export async function createBooking(
       duration_min: service.duration_min,
       price: service.price,
       status: "confirmed",
+      // Solo si hay comprobante: así la reserva no se rompe aunque la
+      // migración 022 aún no se haya corrido.
+      ...(depositUrl ? { deposit_url: depositUrl } : {}),
     })
     .select("id")
     .single();
