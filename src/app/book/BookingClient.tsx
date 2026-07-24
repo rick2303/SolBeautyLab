@@ -245,7 +245,13 @@ export function BookingClient({ data }: { data: BookingData }) {
       next.getUTCMonth() + 1,
       next.getUTCDate()
     );
-    getBusy(staffId, from.toISOString(), to.toISOString())
+    // Ventana 12h hacia atrás: atrapa citas largas (p. ej. un walk-in) que
+    // empezaron antes de la medianoche del día elegido y siguen corriendo
+    getBusy(
+      staffId,
+      new Date(from.getTime() - 12 * 3600000).toISOString(),
+      to.toISOString()
+    )
       .then(setBusy)
       .finally(() => setLoadingSlots(false));
   }, [staffId, day]);

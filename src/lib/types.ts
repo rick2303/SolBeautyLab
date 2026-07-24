@@ -114,6 +114,28 @@ export interface Appointment {
   status: AppointmentStatus;
   notes: string | null;
   deposit_url: string | null; // comprobante de depósito (imagen), opcional
+  is_walk_in?: boolean; // true si se registró desde el botón de walk-in (mig 025)
+}
+
+/** Ficha de cliente + consentimiento informado firmado (mig 025) */
+export interface ClientConsent {
+  id: string;
+  client_id: string;
+  appointment_id: string | null;
+  staff_id: string | null;
+  service_label: string;
+  birth_date: string | null;
+  address: string | null;
+  emergency_contact: string | null;
+  emergency_phone: string | null;
+  medical_conditions: string[]; // llaves neutras ("diabetes", "none", …)
+  medications: string | null;
+  allergies: string | null;
+  chemical_acks: string[]; // declaraciones aceptadas de servicios químicos
+  photos_record: boolean;
+  photos_social: boolean;
+  signature: string; // PNG data-url
+  signed_at: string;
 }
 
 /** Cita con joins (clients/services/profiles embebidos por PostgREST) */

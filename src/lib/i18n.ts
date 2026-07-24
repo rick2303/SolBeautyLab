@@ -541,4 +541,71 @@ export const ES: Record<string, string> = {
   Friday: "Viernes",
   Saturday: "Sábado",
   Sunday: "Domingo",
+
+  // ---- Walk-in ----
+  "Walk-in": "Walk-in",
+  Search: "Buscar",
+  "Searching…": "Buscando…",
+  "Continue →": "Continuar →",
+  visit: "visita",
+  "Last visits": "Últimas visitas",
+  "No completed visits yet": "Aún no tiene visitas completadas",
+  "Consent form on file": "Ficha firmada en expediente",
+  "New client — will be registered with this walk-in":
+    "Cliente nuevo — se registrará con este walk-in",
+  "Client name": "Nombre del cliente",
+  "Pick a service and a technician": "Elige servicio y técnico",
+  "Name and a valid phone are required":
+    "Se necesita nombre y un teléfono válido",
+  "Could not create client:": "No se pudo crear el cliente:",
+  "Technician is busy": "El técnico está ocupado",
+  until: "hasta",
+  "Could not register:": "No se pudo registrar:",
+  "Walk-in registered": "Walk-in registrado",
+  "Start service": "Iniciar servicio",
+  "Registering…": "Registrando…",
+  "Starts now": "Empieza ahora",
+  "ends approx.": "termina aprox.",
+  "the technician will show as busy on the calendar":
+    "el técnico aparecerá ocupado en el calendario",
+
+  // ---- Ficha + consentimiento ----
+  "Client record & consent": "Ficha de cliente y consentimiento",
+  "Previous form on file — fields prefilled. Review and sign again for today's service.":
+    "Hay una ficha previa en expediente — campos prellenados. Revísala y firma de nuevo para el servicio de hoy.",
+  "Client information": "Información del cliente",
+  Specialist: "Especialista",
+  "Birth date": "Fecha de nacimiento",
+  "Emergency contact": "Contacto de emergencia",
+  "Emergency phone": "Teléfono de emergencia",
+  "Medical history": "Historial médico",
+  Medications: "Medicamentos",
+  "Allergies (adhesives, latex, pigments, dyes…)":
+    "Alergias (adhesivos, látex, pigmentos, tintes…)",
+  "Chemical color services": "Servicios químicos de color",
+  "Show this section (only for color/chemical services)":
+    "Mostrar esta sección (solo para servicios de color/químicos)",
+  "Informed consent": "Consentimiento informado",
+  "I have read and accept the informed consent":
+    "He leído y acepto el consentimiento informado",
+  "Photo authorization": "Autorización de fotografías",
+  "I authorize photos for the client file":
+    "Autorizo fotografías para expediente",
+  "I authorize use on social media / advertising":
+    "Autorizo uso en redes sociales / publicidad",
+  "Neither checked = no publication authorized":
+    "Sin marcar = no autoriza publicación",
+  Policies: "Políticas",
+  "Client signature": "Firma del cliente",
+  "Client signs here (finger or mouse)":
+    "El cliente firma aquí (dedo o mouse)",
+  "Clear signature": "Borrar firma",
+  "Accept the informed consent to continue":
+    "Acepta el consentimiento informado para continuar",
+  "The client's signature is required": "Falta la firma del cliente",
+  "Save signed form": "Guardar ficha firmada",
+  "Signed form saved": "Ficha firmada guardada",
+  "Could not save the form:": "No se pudo guardar la ficha:",
+  "Walk-in saved without a signed form":
+    "Walk-in guardado sin ficha firmada",
 };

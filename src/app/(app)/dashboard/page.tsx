@@ -4,6 +4,7 @@ import { createClient, getSessionProfile } from "@/lib/supabase/server";
 import { PageHeader, Card, StatCard } from "@/components/PageHeader";
 import { ApptList } from "@/components/ApptRow";
 import { NewApptButton } from "@/components/NewApptButton";
+import { WalkInButton } from "@/components/WalkInButton";
 import { fmtMoney } from "@/lib/format";
 import { dayRangeTz, monthRangeTz, wallHour, SALON_TZ } from "@/lib/tz";
 import { canAccess } from "@/lib/roles";
@@ -219,22 +220,30 @@ export default async function DashboardPage() {
     servedCount > 0 ? Math.round((returningCount / servedCount) * 100) : 0;
 
   // Datos para el modal de nueva cita (solo si puede usar la agenda)
-  const [{ data: clientOpts }, { data: serviceOpts }, { data: staffOpts }] =
-    seeCalendar
-      ? await Promise.all([
-          supabase.from("clients").select("id, full_name").order("full_name"),
-          supabase
-            .from("services")
-            .select("id, name, price, duration_min")
-            .eq("is_active", true)
-            .order("name"),
-          supabase
-            .from("profiles")
-            .select("id, full_name, role")
-            .eq("is_active", true)
-            .order("full_name"),
-        ])
-      : [{ data: null }, { data: null }, { data: null }];
+  const [
+    { data: clientOpts },
+    { data: serviceOpts },
+    { data: staffOpts },
+    { data: categoryOpts },
+  ] = seeCalendar
+    ? await Promise.all([
+        supabase.from("clients").select("id, full_name").order("full_name"),
+        supabase
+          .from("services")
+          .select("id, name, price, duration_min, category_id")
+          .eq("is_active", true)
+          .order("name"),
+        supabase
+          .from("profiles")
+          .select("id, full_name, role")
+          .eq("is_active", true)
+          .order("full_name"),
+        supabase
+          .from("service_categories")
+          .select("id, name, icon")
+          .order("sort_order"),
+      ])
+    : [{ data: null }, { data: null }, { data: null }, { data: null }];
 
   const h = wallHour();
   const greeting = t(
@@ -254,12 +263,20 @@ export default async function DashboardPage() {
         sub={`${dateLabel} · ${todayAppts?.length ?? 0} ${t("appointments today")}`}
       >
         {seeCalendar && (
-          <NewApptButton
-            clients={clientOpts ?? []}
-            services={serviceOpts ?? []}
-            staff={staffOpts ?? []}
-            me={me}
-          />
+          <>
+            <WalkInButton
+              services={serviceOpts ?? []}
+              categories={categoryOpts ?? []}
+              staff={staffOpts ?? []}
+              me={me}
+            />
+            <NewApptButton
+              clients={clientOpts ?? []}
+              services={serviceOpts ?? []}
+              staff={staffOpts ?? []}
+              me={me}
+            />
+          </>
         )}
       </PageHeader>
 
