@@ -110,16 +110,27 @@ export default async function DashboardPage() {
   } else if (seePayments) {
     const { data: todayPays } = await supabase
       .from("payments")
-      .select("amount")
+      .select("amount, staff_id, recorded_by, appointments(staff_id)")
       .gte("paid_at", today.from)
       .lt("paid_at", today.to);
     const { data: monthPays } = await supabase
       .from("payments")
-      .select("amount")
+      .select("amount, staff_id, recorded_by, appointments(staff_id)")
       .gte("paid_at", month.from)
       .lt("paid_at", month.to);
     const todayRev = (todayPays ?? []).reduce((s, p) => s + Number(p.amount), 0);
     const monthRev = (monthPays ?? []).reduce((s, p) => s + Number(p.amount), 0);
+    // A quién le cuenta cada pago: asignado > técnico de la cita > quien lo
+    // registró. Sin esto, cobrar la cita de otra técnica desde el calendario
+    // contaba como ingreso propio de quien registró el pago.
+    const paidTo = (p: {
+      staff_id: string | null;
+      recorded_by: string | null;
+      appointments: unknown;
+    }) =>
+      p.staff_id ??
+      (p.appointments as { staff_id: string | null } | null)?.staff_id ??
+      p.recorded_by;
 
     if (me.role === "owner" && seeExpenses) {
       const { data: monthExps } = await supabase
@@ -159,15 +170,20 @@ export default async function DashboardPage() {
         },
       ];
     } else {
-      // Receptionist (o owner sin módulo de gastos): RLS solo muestra los
-      // pagos de sus propios servicios
+      // Receptionist (o owner sin módulo de gastos): "mis ingresos" son los
+      // que me pertenecen (asignados a mí o de mis citas), no todo lo que
+      // RLS me deja ver — cobrar la cita de otra técnica no cuenta aquí.
+      const myToday = (todayPays ?? []).filter((p) => paidTo(p) === me.id);
+      const myMonth = (monthPays ?? []).filter((p) => paidTo(p) === me.id);
+      const myTodayRev = myToday.reduce((s, p) => s + Number(p.amount), 0);
+      const myMonthRev = myMonth.reduce((s, p) => s + Number(p.amount), 0);
       statCards = [
         {
           label: t("My revenue today"),
-          value: fmtMoney(todayRev),
-          hint: `${todayPays?.length ?? 0} ${t("payments")}`,
+          value: fmtMoney(myTodayRev),
+          hint: `${myToday.length} ${t("payments")}`,
         },
-        { label: t("My month revenue"), value: fmtMoney(monthRev) },
+        { label: t("My month revenue"), value: fmtMoney(myMonthRev) },
         {
           label: t("Today's appointments"),
           value: String(todayAppts?.length ?? 0),
@@ -245,6 +261,23 @@ export default async function DashboardPage() {
       ])
     : [{ data: null }, { data: null }, { data: null }, { data: null }];
 
+  // Citas de hoy sin ficha de consentimiento firmada (badge ✎ en la lista).
+  // Si la migración 025 no ha corrido, la consulta falla y no se marca nada.
+  let noConsentIds: string[] = [];
+  const todayIds = (todayAppts ?? [])
+    .filter((a) => a.status !== "cancelled" && a.status !== "no_show")
+    .map((a) => a.id);
+  if (todayIds.length > 0) {
+    const { data: consRows, error: consErr } = await supabase
+      .from("client_consents")
+      .select("appointment_id")
+      .in("appointment_id", todayIds);
+    if (!consErr) {
+      const signed = new Set((consRows ?? []).map((c) => c.appointment_id));
+      noConsentIds = todayIds.filter((id) => !signed.has(id));
+    }
+  }
+
   const h = wallHour();
   const greeting = t(
     h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"
@@ -312,6 +345,7 @@ export default async function DashboardPage() {
               appts={(todayAppts ?? []) as unknown as AppointmentFull[]}
               empty={t("No appointments today")}
               canCharge={seePayments}
+              noConsentIds={noConsentIds}
             />
           </Card>
           <Card className="px-[18px] pb-2.5 pt-[18px]">

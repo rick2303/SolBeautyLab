@@ -5,6 +5,7 @@ import { MobileNav, Sidebar } from "@/components/Sidebar";
 import { LangProvider } from "@/components/LangProvider";
 import { ToastProvider } from "@/components/ui/Toaster";
 import { PushRegister } from "@/components/PushRegister";
+import { SessionKeeper } from "@/components/SessionKeeper";
 import { SolLogo } from "@/components/SolLogo";
 
 export default async function AppLayout({
@@ -51,6 +52,7 @@ export default async function AppLayout({
           </main>
         </div>
         <PushRegister />
+        <SessionKeeper />
       </ToastProvider>
     </LangProvider>
   );

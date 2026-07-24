@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Field, inputCls, PrimaryBtn, GhostBtn } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toaster";
 import { useLang } from "@/components/LangProvider";
+import { fmtDate } from "@/lib/format";
 import type { ClientConsent } from "@/lib/types";
 
 /** Lo que la ficha entrega al guardarse (columnas de client_consents) */
@@ -22,6 +23,12 @@ export interface ConsentPayload {
 }
 
 // Llaves neutras de idioma: así lo guardado no depende del idioma de la UI
+export function medicalLabel(key: string, lang: "es" | "en"): string {
+  if (key === "none") return lang === "es" ? "Ninguna" : "None";
+  const m = MEDICAL.find((x) => x.key === key);
+  return m ? m[lang] : key;
+}
+
 const MEDICAL: { key: string; es: string; en: string }[] = [
   { key: "diabetes", es: "Diabetes", en: "Diabetes" },
   { key: "hypertension", es: "Hipertensión", en: "Hypertension" },
@@ -95,10 +102,12 @@ function SectionTitle({ n, children }: { n: number; children: React.ReactNode })
 function CheckRow({
   checked,
   onToggle,
+  error = false,
   children,
 }: {
   checked: boolean;
   onToggle: () => void;
+  error?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -109,7 +118,7 @@ function CheckRow({
         onChange={onToggle}
         className="mt-0.5 h-4 w-4 flex-none accent-[#b0863c]"
       />
-      <span>{children}</span>
+      <span className={error ? "text-[#a05a5a]" : ""}>{children}</span>
     </label>
   );
 }
@@ -117,8 +126,10 @@ function CheckRow({
 /** Pad de firma: canvas con pointer events, exporta PNG data-url */
 function SignaturePad({
   onChange,
+  error = false,
 }: {
   onChange: (dataUrl: string | null) => void;
+  error?: boolean;
 }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
@@ -196,14 +207,25 @@ function SignaturePad({
           onPointerMove={move}
           onPointerUp={up}
           onPointerLeave={up}
-          className="h-[140px] w-full touch-none rounded-xl border border-input bg-white"
+          className={`h-[140px] w-full touch-none rounded-xl border bg-white ${
+            error ? "border-[#d9a0a0]" : "border-input"
+          }`}
         />
         {empty && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[12px] text-faint">
+          <div
+            className={`pointer-events-none absolute inset-0 flex items-center justify-center text-[12px] ${
+              error ? "text-[#a05a5a]" : "text-faint"
+            }`}
+          >
             ✎ {t("Client signs here (finger or mouse)")}
           </div>
         )}
       </div>
+      {error && (
+        <div className="mt-1 text-[11px] text-[#a05a5a]">
+          {t("The client's signature is required")}
+        </div>
+      )}
       {!empty && (
         <button
           onClick={clear}
@@ -212,6 +234,65 @@ function SignaturePad({
           {t("Clear signature")}
         </button>
       )}
+    </div>
+  );
+}
+
+/** Resumen de lectura de una ficha ya firmada (no se edita, se consulta) */
+export function ConsentSummary({ consent }: { consent: ClientConsent }) {
+  const { t, lang } = useLang();
+  const L: "es" | "en" = lang === "es" ? "es" : "en";
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="text-[14px] font-medium text-[#4a7d57]">
+        ✓ {t("Signed form")} · {fmtDate(consent.signed_at)}
+      </div>
+      <div className="text-[12.5px]">
+        <span className="text-muted">{t("Service")}: </span>
+        {consent.service_label || "—"}
+        {consent.signer_name && (
+          <>
+            {" "}
+            · <span className="text-muted">{t("Signed by")}: </span>
+            {consent.signer_name}
+          </>
+        )}
+      </div>
+      {consent.medical_conditions.length > 0 && (
+        <div className="text-[12.5px]">
+          <span className="text-muted">{t("Medical history")}: </span>
+          {consent.medical_conditions
+            .map((k) => medicalLabel(k, L))
+            .join(", ")}
+        </div>
+      )}
+      {consent.medications && (
+        <div className="text-[12.5px]">
+          <span className="text-muted">{t("Medications")}: </span>
+          {consent.medications}
+        </div>
+      )}
+      {consent.allergies && (
+        <div className="text-[12.5px]">
+          <span className="text-muted">{t("Allergies")}: </span>
+          {consent.allergies}
+        </div>
+      )}
+      <div className="text-[12.5px]">
+        <span className="text-muted">{t("Photo authorization")}: </span>
+        {consent.photos_social
+          ? t("I authorize use on social media / advertising")
+          : consent.photos_record
+            ? t("I authorize photos for the client file")
+            : t("Neither checked = no publication authorized")}
+      </div>
+      {/* La firma es un PNG data-url guardado en la ficha */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={consent.signature}
+        alt={t("Client signature")}
+        className="h-[110px] w-full rounded-xl border border-line bg-white object-contain"
+      />
     </div>
   );
 }
@@ -262,6 +343,8 @@ export function ConsentForm({
   );
   const [accepted, setAccepted] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
+  // Ya intentó guardar: los campos obligatorios faltantes se pintan en rojo
+  const [tried, setTried] = useState(false);
 
   function toggleCondition(key: string) {
     setConditions((prev) =>
@@ -282,12 +365,16 @@ export function ConsentForm({
   }
 
   function submit() {
-    if (!accepted) {
-      toast("⚠︎ " + t("Accept the informed consent to continue"));
-      return;
-    }
-    if (!signature) {
-      toast("⚠︎ " + t("The client's signature is required"));
+    if (!accepted || !signature) {
+      setTried(true);
+      toast(
+        "⚠︎ " +
+          t(
+            !accepted
+              ? "Accept the informed consent to continue"
+              : "The client's signature is required"
+          )
+      );
       return;
     }
     onSubmit({
@@ -411,10 +498,11 @@ export function ConsentForm({
             className={inputCls}
           />
         </Field>
-        <Field label={t("Allergies (adhesives, latex, pigments, dyes…)")}>
+        <Field label={t("Allergies")}>
           <input
             value={allergies}
             onChange={(e) => setAllergies(e.target.value)}
+            placeholder={t("Adhesives, latex, pigments, dyes…")}
             className={inputCls}
           />
         </Field>
@@ -446,11 +534,20 @@ export function ConsentForm({
       <div className="rounded-[10px] bg-tan px-3.5 py-3 text-[12px] leading-relaxed text-[#6f6659]">
         {CONSENT_BODY[L]}
       </div>
-      <CheckRow checked={accepted} onToggle={() => setAccepted(!accepted)}>
+      <CheckRow
+        checked={accepted}
+        onToggle={() => setAccepted(!accepted)}
+        error={tried && !accepted}
+      >
         <span className="font-medium">
           {t("I have read and accept the informed consent")}
         </span>
       </CheckRow>
+      {tried && !accepted && (
+        <div className="-mt-2 text-[11px] text-[#a05a5a]">
+          {t("Accept the informed consent to continue")}
+        </div>
+      )}
 
       <SectionTitle n={5}>{t("Photo authorization")}</SectionTitle>
       <div className="flex flex-col gap-2">
@@ -481,7 +578,7 @@ export function ConsentForm({
       </ul>
 
       <SectionTitle n={7}>{t("Client signature")}</SectionTitle>
-      <SignaturePad onChange={setSignature} />
+      <SignaturePad onChange={setSignature} error={tried && !signature} />
 
       <div className="mt-1 flex gap-2.5 border-t border-line-4 pt-4">
         <GhostBtn onClick={onSkip} className="flex-1">

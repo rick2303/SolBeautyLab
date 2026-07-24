@@ -2,11 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, createFreshClient } from "@/lib/supabase/client";
+import { checkAppointmentConflicts } from "@/app/(app)/appointment-actions";
 import { useToast } from "@/components/ui/Toaster";
 import { useLang } from "@/components/LangProvider";
 import { inputCls, ModalShell } from "@/components/ui/Modal";
 import { DepositField, uploadDeposit } from "@/components/DepositField";
+import {
+  ConsentForm,
+  ConsentSummary,
+  type ConsentPayload,
+} from "@/components/ConsentForm";
 import {
   fmtMoney,
   fmtTime,
@@ -18,6 +24,7 @@ import {
 import type {
   AppointmentFull,
   AppointmentStatus,
+  ClientConsent,
   PaymentMethod,
 } from "@/lib/types";
 
@@ -42,7 +49,18 @@ export function ApptDetailModal({
   canCharge?: boolean;
 }) {
   const [status, setStatus] = useState<AppointmentStatus>(appt.status);
-  const [mode, setMode] = useState<"status" | "edit" | "charge">("status");
+  const [mode, setMode] = useState<"status" | "edit" | "charge" | "consent">(
+    "status"
+  );
+  const [clientPhone, setClientPhone] = useState("");
+  const [consents, setConsents] = useState<ClientConsent[]>([]);
+  // Solo interceptamos estados si la tabla de fichas respondió sin error
+  // (si la migración 025 no ha corrido, no molestamos con avisos falsos)
+  const [consentsReady, setConsentsReady] = useState(false);
+  // Estado que el usuario quiso poner cuando le avisamos que falta la ficha
+  const [pendingStatus, setPendingStatus] = useState<AppointmentStatus | null>(
+    null
+  );
   const [date, setDate] = useState(() => {
     const d = new Date(appt.starts_at);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -61,7 +79,7 @@ export function ApptDetailModal({
   const [saving, setSaving] = useState(false);
   const toast = useToast();
   const router = useRouter();
-  const { t } = useLang();
+  const { t, lang } = useLang();
 
   useEffect(() => {
     if (mode !== "edit" || staffOpts.length > 0) return;
@@ -73,6 +91,31 @@ export function ApptDetailModal({
       .order("full_name")
       .then(({ data }) => setStaffOpts(data ?? []));
   }, [mode, staffOpts.length]);
+
+  // Teléfono del cliente + fichas firmadas (para la ficha de consentimiento).
+  // Si la migración 025 no ha corrido, la consulta falla y queda vacío.
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("clients")
+      .select("phone")
+      .eq("id", appt.client_id)
+      .single()
+      .then(({ data }) => setClientPhone(data?.phone ?? ""));
+    supabase
+      .from("client_consents")
+      .select("*")
+      .eq("client_id", appt.client_id)
+      .order("signed_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (error) return;
+        setConsents((data as ClientConsent[]) ?? []);
+        setConsentsReady(true);
+      });
+  }, [appt.client_id]);
+
+  const signedThis = consents.find((c) => c.appointment_id === appt.id) ?? null;
+  const lastConsent = consents[0] ?? null;
 
   // ¿Ya tiene pago registrado esta cita?
   useEffect(() => {
@@ -86,9 +129,24 @@ export function ApptDetailModal({
       .then(({ data }) => setAlreadyPaid((data ?? []).length > 0));
   }, [appt.id, canCharge]);
 
-  async function apply(st: AppointmentStatus) {
+  function apply(st: AppointmentStatus) {
+    // Aviso (no bloqueo): empezar o completar sin ficha firmada. El usuario
+    // decide "Firmar ahora" o "Continuar sin firmar" en el prompt de abajo.
+    if (
+      consentsReady &&
+      !signedThis &&
+      (st === "in_progress" || st === "completed")
+    ) {
+      setPendingStatus(st);
+      return;
+    }
+    doApply(st);
+  }
+
+  async function doApply(st: AppointmentStatus) {
+    setPendingStatus(null);
     setStatus(st);
-    const supabase = createClient();
+    const supabase = await createFreshClient();
     const { error } = await supabase
       .from("appointments")
       .update({ status: st, updated_at: new Date().toISOString() })
@@ -113,7 +171,7 @@ export function ApptDetailModal({
       return;
     }
     setSaving(true);
-    const supabase = createClient();
+    const supabase = await createFreshClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -175,10 +233,77 @@ export function ApptDetailModal({
     router.refresh();
   }
 
-  async function reschedule() {
+  async function saveConsent(p: ConsentPayload) {
     setSaving(true);
     const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const row = {
+      client_id: appt.client_id,
+      appointment_id: appt.id,
+      staff_id: appt.staff_id,
+      service_label: appt.services?.name ?? "",
+      created_by: user?.id,
+      ...p,
+    };
+    // signer_name = nombre tal como se firmó (mig 026); tolera que la
+    // columna aún no exista
+    let res = await supabase
+      .from("client_consents")
+      .insert({ ...row, signer_name: appt.clients?.full_name ?? null })
+      .select("*")
+      .single();
+    if (res.error && /signer_name/i.test(res.error.message)) {
+      res = await supabase
+        .from("client_consents")
+        .insert(row)
+        .select("*")
+        .single();
+    }
+    const { data: created, error } = res;
+    setSaving(false);
+    if (error) {
+      toast(t("Could not save the form:") + " " + error.message);
+      return;
+    }
+    setConsents((prev) => [created as ClientConsent, ...prev]);
+    toast("✓ " + t("Signed form saved"));
+    setMode("status");
+    // Si venía de "quiero marcar in progress/completed pero faltaba la
+    // ficha", ya firmada se aplica ese estado de una vez
+    if (pendingStatus) doApply(pendingStatus);
+  }
+
+  async function reschedule() {
+    setSaving(true);
     const starts = new Date(`${date}T${time}:00`);
+    if (isNaN(starts.getTime())) {
+      setSaving(false);
+      toast(t("Update failed:") + " " + t("Invalid date"));
+      return;
+    }
+    // Antes reagendar no validaba nada: se podía encimar al técnico o
+    // duplicar al cliente. Chequeo en servidor (ve todas las citas).
+    const conflicts = await checkAppointmentConflicts({
+      staffId,
+      clientId: appt.client_id,
+      startsISO: starts.toISOString(),
+      durationMin: appt.duration_min,
+      excludeApptId: appt.id,
+    });
+    if (conflicts.staff || conflicts.client) {
+      setSaving(false);
+      const c = conflicts.staff ?? conflicts.client!;
+      const label = conflicts.staff
+        ? t("Time conflict")
+        : t("This client already has an appointment at that time");
+      toast(
+        `⚠︎ ${label}: ${c.clientName ?? c.serviceName ?? ""} · ${fmtTime(c.startsAt)}`
+      );
+      return;
+    }
+    const supabase = await createFreshClient();
     const { error } = await supabase
       .from("appointments")
       .update({
@@ -198,7 +323,7 @@ export function ApptDetailModal({
   }
 
   return (
-    <ModalShell onClose={onClose} width={400}>
+    <ModalShell onClose={onClose} width={mode === "consent" ? 640 : 400}>
       <div className="flex-none border-b border-line-2 px-[22px] py-5">
         <div className="flex items-start justify-between">
           <div className="font-serif text-[22px] font-semibold">
@@ -228,6 +353,14 @@ export function ApptDetailModal({
       <div className="flex-1 overflow-y-auto px-[22px] py-[18px]">
         {mode === "status" && (
           <>
+            {consentsReady &&
+              !signedThis &&
+              status !== "cancelled" &&
+              status !== "no_show" && (
+                <div className="mb-3 rounded-[10px] border border-[#e4c97e] bg-[#fdf7e8] px-3.5 py-2 text-[11.5px] font-medium text-[#8a6526]">
+                  ✎ {t("No signed consent form for this service")}
+                </div>
+              )}
             <div className="mb-2.5 text-[11px] uppercase tracking-[0.06em] text-muted">
               {t("Set status")}
             </div>
@@ -252,6 +385,31 @@ export function ApptDetailModal({
                 );
               })}
             </div>
+            {pendingStatus && (
+              <div className="anim-fade mt-3 rounded-xl border border-[#e4c97e] bg-[#fdf7e8] p-3.5">
+                <div className="text-[12.5px] font-medium leading-snug text-[#8a6526]">
+                  ✎{" "}
+                  {t(
+                    "This appointment has no signed consent form. Sign it before starting the service?"
+                  )}
+                </div>
+                <div className="mt-2.5 flex gap-2">
+                  <button
+                    onClick={() => setMode("consent")}
+                    className="grad-gold h-9 flex-1 cursor-pointer rounded-[10px] border-none text-[12.5px] font-medium text-white"
+                  >
+                    {t("Sign it now")}
+                  </button>
+                  <button
+                    onClick={() => doApply(pendingStatus)}
+                    className="h-9 flex-1 cursor-pointer rounded-[10px] border border-[#e4c97e] bg-white text-[12.5px] text-[#8a6526]"
+                  >
+                    {t("Continue without signing")}
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="mt-4 flex gap-2.5">
               <button
                 onClick={() => setMode("edit")}
@@ -268,6 +426,15 @@ export function ApptDetailModal({
                 </button>
               )}
             </div>
+
+            <button
+              onClick={() => setMode("consent")}
+              className="mt-2.5 h-[42px] w-full cursor-pointer rounded-xl border border-[#ece2d0] bg-white text-[13px] font-medium text-gold-dark"
+            >
+              {signedThis
+                ? `✓ ${t("Consent form")} · ${fmtDate(signedThis.signed_at)}`
+                : `✎ ${t("Consent form")}`}
+            </button>
 
             <div className="mt-4 rounded-xl border border-line-2 p-3.5">
               <div className="mb-2 flex items-center justify-between">
@@ -307,6 +474,11 @@ export function ApptDetailModal({
             <div className="mb-3.5 text-[12px] text-muted">
               {t("Record the payment for this visit")}
             </div>
+            {consentsReady && !signedThis && (
+              <div className="mb-3 rounded-[10px] border border-[#e4c97e] bg-[#fdf7e8] px-3.5 py-2 text-[11.5px] font-medium text-[#8a6526]">
+                ✎ {t("No signed consent form for this service")}
+              </div>
+            )}
             <div className="mb-1.5 text-[11px] uppercase tracking-[0.06em] text-muted">
               {t("Amount")}
             </div>
@@ -355,6 +527,33 @@ export function ApptDetailModal({
             </div>
           </div>
         )}
+
+        {mode === "consent" &&
+          (signedThis ? (
+            // Ya firmada para esta cita: resumen de lectura, no se edita
+            <div className="anim-fade flex flex-col gap-3">
+              <ConsentSummary consent={signedThis} />
+              <button
+                onClick={() => setMode("status")}
+                className="h-[42px] cursor-pointer rounded-xl border border-[#ece2d0] bg-white text-[13px] text-[#8a8178]"
+              >
+                {t("Back")}
+              </button>
+            </div>
+          ) : (
+            <div className="anim-fade">
+              <ConsentForm
+                clientName={appt.clients?.full_name ?? ""}
+                phone={clientPhone}
+                serviceLabel={appt.services?.name ?? ""}
+                staffName={appt.profiles?.full_name ?? ""}
+                lastConsent={lastConsent}
+                saving={saving}
+                onSubmit={saveConsent}
+                onSkip={() => setMode("status")}
+              />
+            </div>
+          ))}
 
         {mode === "edit" && (
           <div className="anim-fade">

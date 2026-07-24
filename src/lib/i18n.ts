@@ -560,6 +560,8 @@ export const ES: Record<string, string> = {
   "Could not create client:": "No se pudo crear el cliente:",
   "Technician is busy": "El técnico está ocupado",
   until: "hasta",
+  "This client already has an appointment at that time":
+    "El cliente ya tiene otra cita en ese horario",
   "Could not register:": "No se pudo registrar:",
   "Walk-in registered": "Walk-in registrado",
   "Start service": "Iniciar servicio",
@@ -580,8 +582,8 @@ export const ES: Record<string, string> = {
   "Emergency phone": "Teléfono de emergencia",
   "Medical history": "Historial médico",
   Medications: "Medicamentos",
-  "Allergies (adhesives, latex, pigments, dyes…)":
-    "Alergias (adhesivos, látex, pigmentos, tintes…)",
+  "Adhesives, latex, pigments, dyes…":
+    "Adhesivos, látex, pigmentos, tintes…",
   "Chemical color services": "Servicios químicos de color",
   "Show this section (only for color/chemical services)":
     "Mostrar esta sección (solo para servicios de color/químicos)",
@@ -608,4 +610,40 @@ export const ES: Record<string, string> = {
   "Could not save the form:": "No se pudo guardar la ficha:",
   "Walk-in saved without a signed form":
     "Walk-in guardado sin ficha firmada",
+  "Consent form": "Ficha de consentimiento",
+  "Signed form": "Ficha firmada",
+  Allergies: "Alergias",
+
+  // ---- Ficha en /book ----
+  "One last step: fill your client record & consent now and skip the paperwork when you arrive":
+    "Un último paso: llena tu ficha y consentimiento ahora y evita el papeleo al llegar",
+  "Consent form signed — thank you!":
+    "Ficha de consentimiento firmada — ¡gracias!",
+  "You can fill the consent form when you arrive":
+    "Puedes llenar la ficha de consentimiento al llegar",
+
+  // ---- Pago cierra la cita activa ----
+  "Appointment in progress": "Cita en curso",
+  "Saving this payment will also mark it as completed":
+    "Al guardar este pago, también se marcará como completada",
+  "Appointment marked as completed": "Cita marcada como completada",
+  "Couldn't update the appointment status:":
+    "No se pudo actualizar el estado de la cita:",
+  "This payment is for this appointment — mark it as completed":
+    "Este pago es de esta cita — marcarla como completada",
+  "The appointment will stay as is (tips, products, other charges)":
+    "La cita queda como está (propinas, productos, otros cobros)",
+  "This appointment has no signed consent form — ask for it before finishing":
+    "Esta cita no tiene ficha de consentimiento firmada — pídela antes de terminar",
+  "Invalid date": "Fecha inválida",
+
+  // ---- Visibilidad de ficha ----
+  "No signed consent form for this service":
+    "Sin ficha de consentimiento firmada para este servicio",
+  "This appointment has no signed consent form. Sign it before starting the service?":
+    "Esta cita no tiene ficha de consentimiento firmada. ¿Firmarla antes de iniciar el servicio?",
+  "Sign it now": "Firmar ahora",
+  "Continue without signing": "Continuar sin firmar",
+  "Signed consent forms": "Fichas de consentimiento firmadas",
+  "Signed by": "Firmó",
 };

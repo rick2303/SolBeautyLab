@@ -134,7 +134,15 @@ interface SalonDay {
   open: boolean;
   noon: Date; // instante de referencia para formatear etiquetas (UTC 12:00)
 }
-import { createBooking, getBusy, type BookingData } from "./actions";
+import {
+  createBooking,
+  getBusy,
+  saveBookingConsent,
+  type BookingData,
+} from "./actions";
+import { ConsentForm } from "@/components/ConsentForm";
+import { LangProvider } from "@/components/LangProvider";
+import { ToastProvider } from "@/components/ui/Toaster";
 
 const SLOT_STEP_MIN = 30;
 
@@ -178,6 +186,34 @@ export function BookingClient({ data }: { data: BookingData }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
+  // Ficha + consentimiento tras reservar (opcional, se puede firmar al llegar)
+  const [consentToken, setConsentToken] = useState<string | null>(null);
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [consentSigned, setConsentSigned] = useState(false);
+  const [consentSaving, setConsentSaving] = useState(false);
+  const [consentError, setConsentError] = useState("");
+  const errorRef = useRef<HTMLDivElement | null>(null);
+  const consentErrorRef = useRef<HTMLDivElement | null>(null);
+
+  // Al confirmar la cita, la vista cambia a la ficha (o al éxito) pero el
+  // scroll seguía hasta abajo, donde estaba el botón — subir al inicio
+  useEffect(() => {
+    if (done) window.scrollTo({ top: 0 });
+  }, [done, consentOpen]);
+
+  // En móvil el mensaje de error del paso 4 quedaba fuera de pantalla,
+  // debajo de la sección de contacto — llevarlo a la vista
+  useEffect(() => {
+    if (error)
+      errorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [error]);
+  useEffect(() => {
+    if (consentError)
+      consentErrorRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+  }, [consentError]);
   const { lang, t, setLang } = useLocalLang();
 
   const service = data.services.find((s) => s.id === serviceId);
@@ -330,7 +366,65 @@ export function BookingClient({ data }: { data: BookingData }) {
       setError(res.error);
       return;
     }
+    setConsentToken(res.consentToken ?? null);
+    setConsentOpen(!!res.consentToken);
     setDone(true);
+  }
+
+  // ---------- Ficha + consentimiento (tras reservar, opcional) ----------
+  if (done && consentOpen && consentToken && service && tech && slot) {
+    return (
+      <Shell topRight={<LangToggle lang={lang} onChange={setLang} />} data={data}>
+        <LangProvider lang={lang}>
+          <ToastProvider>
+            <div className="anim-scale mx-auto w-full rounded-[22px] border border-line-2 bg-card p-6">
+              <div className="text-center">
+                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#eaf5ec] text-xl">
+                  ✓
+                </div>
+                <div className="mt-2 font-serif text-[22px] font-semibold">
+                  {t("You're booked,")} {name.split(" ")[0]}!
+                </div>
+                <div className="mx-auto mt-1.5 mb-5 max-w-[420px] text-[12.5px] leading-relaxed text-muted">
+                  {t(
+                    "One last step: fill your client record & consent now and skip the paperwork when you arrive"
+                  )}
+                </div>
+              </div>
+              <ConsentForm
+                clientName={name}
+                phone={phone}
+                serviceLabel={service.name}
+                staffName={tech.full_name}
+                lastConsent={null}
+                saving={consentSaving}
+                onSubmit={async (p) => {
+                  setConsentError("");
+                  setConsentSaving(true);
+                  const res = await saveBookingConsent(consentToken, p, name);
+                  setConsentSaving(false);
+                  if (res.error) {
+                    setConsentError(res.error);
+                    return;
+                  }
+                  setConsentSigned(true);
+                  setConsentOpen(false);
+                }}
+                onSkip={() => setConsentOpen(false)}
+              />
+              {consentError && (
+                <div
+                  ref={consentErrorRef}
+                  className="anim-shake mt-3 rounded-xl bg-[#f6e9e9] px-3.5 py-2.5 text-[12.5px] text-[#a05a5a]"
+                >
+                  {consentError}
+                </div>
+              )}
+            </div>
+          </ToastProvider>
+        </LangProvider>
+      </Shell>
+    );
   }
 
   // ---------- Pantalla de éxito ----------
@@ -364,6 +458,17 @@ export function BookingClient({ data }: { data: BookingData }) {
               ? `${service.duration_min} min`
               : `${fmtMoney(service.price)} · ${service.duration_min} min`}
           </div>
+          {consentSigned ? (
+            <div className="mt-4 rounded-[10px] border border-[#cfe0d3] bg-[#eaf5ec] px-3.5 py-2.5 text-[12px] text-[#4a7d57]">
+              ✓ {t("Consent form signed — thank you!")}
+            </div>
+          ) : (
+            consentToken && (
+              <div className="mt-4 text-[12px] text-muted">
+                {t("You can fill the consent form when you arrive")}
+              </div>
+            )
+          )}
           <div className="mt-4 text-[12px] text-muted">
             {t(
               "If you need to change or cancel your appointment, reach us by phone or WhatsApp"
@@ -381,6 +486,10 @@ export function BookingClient({ data }: { data: BookingData }) {
               setName("");
               setPhone("");
               setEmail("");
+              setConsentToken(null);
+              setConsentOpen(false);
+              setConsentSigned(false);
+              setConsentError("");
             }}
             className="mt-6 h-11 w-full cursor-pointer rounded-[14px] border border-chip-border bg-white text-[13px] font-medium text-gold-dark"
           >
@@ -849,7 +958,10 @@ export function BookingClient({ data }: { data: BookingData }) {
               />
             </div>
             {error && (
-              <div className="anim-shake mt-3 rounded-xl bg-[#f6e9e9] px-3.5 py-2.5 text-[12.5px] text-[#a05a5a]">
+              <div
+                ref={errorRef}
+                className="anim-shake mt-3 rounded-xl bg-[#f6e9e9] px-3.5 py-2.5 text-[12.5px] text-[#a05a5a]"
+              >
                 {error}
               </div>
             )}

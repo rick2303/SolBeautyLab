@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, createFreshClient } from "@/lib/supabase/client";
+import { checkAppointmentConflicts } from "@/app/(app)/appointment-actions";
 import { Modal, Field, inputCls, PrimaryBtn, GhostBtn } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toaster";
 import { useLang } from "@/components/LangProvider";
@@ -149,7 +150,7 @@ export function WalkInModal({
       return;
     }
     setSaving(true);
-    const supabase = createClient();
+    const supabase = await createFreshClient();
 
     // 1) Cliente: usa el existente o créalo etiquetado como walk-in
     let cid = found?.id ?? null;
@@ -173,32 +174,33 @@ export function WalkInModal({
       setFound(c);
     }
 
-    // 2) ¿El técnico está libre AHORA? Ventana amplia hacia atrás para
-    //    atrapar citas largas que empezaron antes y siguen corriendo
     const starts = new Date();
-    const ends = new Date(starts.getTime() + service.duration_min * 60000);
-    const { data: existing } = await supabase
-      .from("appointments")
-      .select("starts_at, duration_min, clients(full_name)")
-      .eq("staff_id", staffId)
-      .in("status", ["scheduled", "confirmed", "in_progress"])
-      .gte("starts_at", new Date(starts.getTime() - 12 * 3600000).toISOString())
-      .lt("starts_at", ends.toISOString());
-    const conflict = (existing ?? []).find((a) => {
-      const aStart = new Date(a.starts_at);
-      const aEnd = new Date(aStart.getTime() + a.duration_min * 60000);
-      return starts < aEnd && aStart < ends;
+
+    // 2) Traslapes de cliente y técnico validados en servidor con
+    //    service-role: ve TODAS las citas aunque quien registra sea rol
+    //    staff (RLS le oculta las ajenas en el cliente)
+    const conflicts = await checkAppointmentConflicts({
+      staffId,
+      clientId: found ? cid : null,
+      startsISO: starts.toISOString(),
+      durationMin: service.duration_min,
     });
-    if (conflict) {
+    if (conflicts.error) {
       setSaving(false);
-      const who =
-        (conflict.clients as unknown as { full_name: string } | null)
-          ?.full_name ?? t("Client");
-      const until = new Date(
-        new Date(conflict.starts_at).getTime() + conflict.duration_min * 60000
-      );
+      toast(t("Could not register:") + " " + conflicts.error);
+      return;
+    }
+    if (conflicts.client) {
+      setSaving(false);
       toast(
-        `⚠︎ ${t("Technician is busy")}: ${who} · ${t("until")} ${fmtTime(until.toISOString())}`
+        `⚠︎ ${t("This client already has an appointment at that time")}: ${conflicts.client.serviceName ?? ""} · ${t("until")} ${fmtTime(conflicts.client.endsAt)}`
+      );
+      return;
+    }
+    if (conflicts.staff) {
+      setSaving(false);
+      toast(
+        `⚠︎ ${t("Technician is busy")}: ${conflicts.staff.clientName ?? t("Client")} · ${t("until")} ${fmtTime(conflicts.staff.endsAt)}`
       );
       return;
     }
@@ -238,16 +240,24 @@ export function WalkInModal({
   async function saveConsent(p: ConsentPayload) {
     if (!clientId) return;
     setSaving(true);
-    const { error } = await createClient()
+    const supabase = await createFreshClient();
+    const row = {
+      client_id: clientId,
+      appointment_id: apptId,
+      staff_id: staffId,
+      service_label: service?.name ?? "",
+      created_by: me.id,
+      ...p,
+    };
+    // signer_name = nombre tal como se firmó (mig 026); si la columna aún
+    // no existe, se guarda la ficha sin él
+    let res = await supabase
       .from("client_consents")
-      .insert({
-        client_id: clientId,
-        appointment_id: apptId,
-        staff_id: staffId,
-        service_label: service?.name ?? "",
-        created_by: me.id,
-        ...p,
-      });
+      .insert({ ...row, signer_name: found?.full_name ?? name.trim() });
+    if (res.error && /signer_name/i.test(res.error.message)) {
+      res = await supabase.from("client_consents").insert(row);
+    }
+    const { error } = res;
     setSaving(false);
     if (error) {
       toast(t("Could not save the form:") + " " + error.message);

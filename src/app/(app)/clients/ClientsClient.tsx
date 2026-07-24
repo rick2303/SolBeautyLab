@@ -17,12 +17,15 @@ import { useLang } from "@/components/LangProvider";
 import { NewApptButton } from "@/components/NewApptButton";
 import {
   avatarFor,
+  fmtDate,
   fmtDateShort,
   fmtMoney,
   initialsOf,
 } from "@/lib/format";
+import { ConsentSummary } from "@/components/ConsentForm";
 import type {
   Client,
+  ClientConsent,
   ClientStats,
   Profile,
   Service,
@@ -321,6 +324,8 @@ function ClientDrawer({
 
           <ClientGallery clientId={client.id} />
 
+          <ClientConsentsSection clientId={client.id} />
+
           <div className="mb-2 mt-[22px] flex items-baseline justify-between">
             <span className="text-[11px] uppercase tracking-[0.06em] text-muted">
               {t("Visit history")}
@@ -532,6 +537,65 @@ const BUCKET = "client-photos";
 interface Photo {
   name: string;
   url: string;
+}
+
+/** Fichas de consentimiento firmadas de la clienta, con detalle y firma */
+function ClientConsentsSection({ clientId }: { clientId: string }) {
+  const [consents, setConsents] = useState<ClientConsent[]>([]);
+  const [sel, setSel] = useState<ClientConsent | null>(null);
+  const { t } = useLang();
+
+  useEffect(() => {
+    setSel(null);
+    createClient()
+      .from("client_consents")
+      .select("*")
+      .eq("client_id", clientId)
+      .order("signed_at", { ascending: false })
+      .then(({ data, error }) =>
+        // Si la migración 025 no ha corrido, la sección simplemente no sale
+        setConsents(error ? [] : ((data as ClientConsent[]) ?? []))
+      );
+  }, [clientId]);
+
+  if (consents.length === 0) return null;
+
+  return (
+    <>
+      <div className="mb-2 mt-[22px] text-[11px] uppercase tracking-[0.06em] text-muted">
+        {t("Signed consent forms")}
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {consents.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => setSel(c)}
+            className="flex cursor-pointer items-center justify-between gap-2 rounded-[10px] border border-line bg-card px-3 py-2 text-left text-[12.5px] hover:border-chip-border"
+          >
+            <span className="truncate">
+              ✓ {c.service_label || t("Consent form")}
+            </span>
+            <span className="flex-none text-[11px] text-muted">
+              {fmtDate(c.signed_at)}
+            </span>
+          </button>
+        ))}
+      </div>
+      {sel && (
+        <ModalShell onClose={() => setSel(null)} width={480}>
+          <div className="p-6">
+            <ConsentSummary consent={sel} />
+            <button
+              onClick={() => setSel(null)}
+              className="mt-4 h-[42px] w-full cursor-pointer rounded-xl border border-[#ece2d0] bg-white text-[13px] text-[#8a8178]"
+            >
+              {t("Close")}
+            </button>
+          </div>
+        </ModalShell>
+      )}
+    </>
+  );
 }
 
 function ClientGallery({ clientId }: { clientId: string }) {

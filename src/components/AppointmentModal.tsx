@@ -2,14 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, createFreshClient } from "@/lib/supabase/client";
 import { Modal, Field, inputCls, PrimaryBtn, GhostBtn } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toaster";
 import { useLang } from "@/components/LangProvider";
 import { fmtMoney, fmtTime } from "@/lib/format";
 import { effectiveDayHours, toMin, DOW_KEYS } from "@/lib/schedule";
 import { DepositField, uploadDeposit } from "@/components/DepositField";
-import { notifyInternalAppointment } from "@/app/(app)/appointment-actions";
+import {
+  checkAppointmentConflicts,
+  notifyInternalAppointment,
+} from "@/app/(app)/appointment-actions";
 import type { Client, Profile, Service, WorkHours } from "@/lib/types";
 
 export function AppointmentModal({
@@ -83,32 +86,34 @@ export function AppointmentModal({
       return;
     }
     setSaving(true);
-    const supabase = createClient();
+    const supabase = await createFreshClient();
     const starts = new Date(`${date}T${time}:00`);
-    const ends = new Date(starts.getTime() + service.duration_min * 60000);
 
-    // Prevención de doble reserva: citas activas del técnico ese día
-    const dayStart = new Date(`${date}T00:00:00`);
-    const dayEnd = new Date(dayStart.getTime() + 86400000);
-    const { data: existing } = await supabase
-      .from("appointments")
-      .select("starts_at, duration_min, clients(full_name)")
-      .eq("staff_id", staffId)
-      .in("status", ["scheduled", "confirmed", "in_progress"])
-      .gte("starts_at", dayStart.toISOString())
-      .lt("starts_at", dayEnd.toISOString());
-    const conflict = (existing ?? []).find((a) => {
-      const aStart = new Date(a.starts_at);
-      const aEnd = new Date(aStart.getTime() + a.duration_min * 60000);
-      return starts < aEnd && aStart < ends;
+    // Traslapes de técnico y de cliente validados en servidor con
+    // service-role: el rol staff no ve citas ajenas por RLS, así que un
+    // chequeo en el cliente era parcial
+    const conflicts = await checkAppointmentConflicts({
+      staffId,
+      clientId,
+      startsISO: starts.toISOString(),
+      durationMin: service.duration_min,
     });
-    if (conflict) {
+    if (conflicts.error) {
       setSaving(false);
-      const who =
-        (conflict.clients as unknown as { full_name: string } | null)
-          ?.full_name ?? t("Client");
+      toast(t("Could not book:") + " " + conflicts.error);
+      return;
+    }
+    if (conflicts.staff) {
+      setSaving(false);
       toast(
-        `⚠︎ ${t("Time conflict")}: ${who} · ${fmtTime(conflict.starts_at)}`
+        `⚠︎ ${t("Time conflict")}: ${conflicts.staff.clientName ?? t("Client")} · ${fmtTime(conflicts.staff.startsAt)}`
+      );
+      return;
+    }
+    if (conflicts.client) {
+      setSaving(false);
+      toast(
+        `⚠︎ ${t("This client already has an appointment at that time")}: ${conflicts.client.serviceName ?? ""} · ${fmtTime(conflicts.client.startsAt)}`
       );
       return;
     }

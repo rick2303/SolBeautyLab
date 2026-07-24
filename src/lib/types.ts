@@ -135,6 +135,7 @@ export interface ClientConsent {
   photos_record: boolean;
   photos_social: boolean;
   signature: string; // PNG data-url
+  signer_name?: string | null; // nombre tal como se firmó (mig 026)
   signed_at: string;
 }
 

@@ -42,6 +42,9 @@ export function CalendarClient({ me }: { me: Profile }) {
   const [sel, setSel] = useState<AppointmentFull | null>(null);
   const [staff, setStaff] = useState<{ id: string; full_name: string }[]>([]);
   const [staffFilter, setStaffFilter] = useState<string>("all");
+  // Fichas firmadas de las citas del día visible (badge ✎ si falta).
+  // null = no consultado/consulta falló → no se marca nada.
+  const [signedIds, setSignedIds] = useState<Set<string> | null>(null);
   const { lang, t } = useLang();
   const locale = lang === "es" ? "es" : "en-US";
 
@@ -122,6 +125,29 @@ export function CalendarClient({ me }: { me: Profile }) {
     load();
   }, [load]);
 
+  // Solo la vista de día marca fichas faltantes (pocas citas, badge útil)
+  useEffect(() => {
+    if (view !== "day" || appts.length === 0) {
+      setSignedIds(null);
+      return;
+    }
+    const supabase = createClient();
+    supabase
+      .from("client_consents")
+      .select("appointment_id")
+      .in(
+        "appointment_id",
+        appts.map((a) => a.id)
+      )
+      .then(({ data, error }) => {
+        if (error) {
+          setSignedIds(null);
+          return;
+        }
+        setSignedIds(new Set((data ?? []).map((c) => c.appointment_id)));
+      });
+  }, [view, appts]);
+
   function shift(dir: 1 | -1) {
     const d = new Date(anchor);
     if (view === "day") d.setDate(d.getDate() + dir);
@@ -171,6 +197,19 @@ export function CalendarClient({ me }: { me: Profile }) {
   }, [appts]);
 
   const todayKey = dateKey(new Date());
+
+  // Vista de día: 8am–7pm por defecto, pero se amplía si hay citas más
+  // temprano o más tarde (antes quedaban invisibles fuera de ese rango)
+  const dayHours = useMemo(() => {
+    let first = 8;
+    let last = 19;
+    for (const a of appts) {
+      const h = new Date(a.starts_at).getHours();
+      if (h < first) first = h;
+      if (h > last) last = h;
+    }
+    return Array.from({ length: last - first + 1 }, (_, i) => i + first);
+  }, [appts]);
 
   return (
     <>
@@ -265,7 +304,7 @@ export function CalendarClient({ me }: { me: Profile }) {
           key={`day-${dateKey(anchor)}`}
           className="anim-fade rounded-2xl border border-line bg-card px-[18px] py-2"
         >
-          {Array.from({ length: 12 }, (_, i) => i + 8).map((h) => {
+          {dayHours.map((h) => {
             const inHour = appts.filter(
               (a) => new Date(a.starts_at).getHours() === h
             );
@@ -290,6 +329,17 @@ export function CalendarClient({ me }: { me: Profile }) {
                     >
                       <div className="text-[12.5px] font-medium">
                         {a.clients?.full_name}
+                        {signedIds !== null &&
+                          !signedIds.has(a.id) &&
+                          a.status !== "cancelled" &&
+                          a.status !== "no_show" && (
+                            <span
+                              title={t("No signed consent form for this service")}
+                              className="ml-1.5 rounded-[10px] bg-white/70 px-1.5 py-0.5 text-[10px]"
+                            >
+                              ✎
+                            </span>
+                          )}
                       </div>
                       <div className="text-[10.5px] opacity-80">
                         {a.services?.name} ·{" "}

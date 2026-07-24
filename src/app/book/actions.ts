@@ -10,6 +10,7 @@ import { effectiveDayHours, toMin } from "@/lib/schedule";
 import { onAppointmentCreated } from "@/lib/messaging";
 import { SALON_TZ } from "@/lib/tz";
 import type { WorkHours } from "@/lib/types";
+import type { ConsentPayload } from "@/components/ConsentForm";
 
 function admin() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -173,9 +174,86 @@ async function uploadDepositDataUrl(
   }
 }
 
+/** Ficha + consentimiento firmado desde /book, autenticado con el
+ *  confirmation_token de la cita recién creada (solo lo conoce quien reservó). */
+export async function saveBookingConsent(
+  token: string,
+  p: ConsentPayload,
+  signerName?: string
+): Promise<{ ok?: true; error?: string }> {
+  if (!token || typeof token !== "string" || token.length > 64) {
+    return { error: "Invalid request" };
+  }
+  const db = admin();
+  const { data: appt } = await db
+    .from("appointments")
+    .select("id, client_id, staff_id, services(name)")
+    .eq("confirmation_token", token)
+    .single();
+  if (!appt) return { error: "Appointment not found" };
+
+  // Idempotente: si esa cita ya tiene ficha, no se duplica
+  const { data: existing } = await db
+    .from("client_consents")
+    .select("id")
+    .eq("appointment_id", appt.id)
+    .limit(1);
+  if ((existing ?? []).length > 0) return { ok: true };
+
+  // Sanitizar: viene de un formulario público
+  const str = (v: unknown, max: number) =>
+    typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
+  const keys = (v: unknown) =>
+    Array.isArray(v)
+      ? v
+          .filter((x): x is string => typeof x === "string")
+          .slice(0, 20)
+          .map((x) => x.slice(0, 40))
+      : [];
+  const signature = typeof p.signature === "string" ? p.signature : "";
+  if (
+    !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(signature) ||
+    signature.length > 300_000
+  ) {
+    return { error: "Invalid signature" };
+  }
+
+  const row = {
+    client_id: appt.client_id,
+    appointment_id: appt.id,
+    staff_id: appt.staff_id,
+    service_label:
+      (appt.services as unknown as { name: string } | null)?.name ?? "",
+    birth_date:
+      typeof p.birth_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p.birth_date)
+        ? p.birth_date
+        : null,
+    address: str(p.address, 300),
+    emergency_contact: str(p.emergency_contact, 120),
+    emergency_phone: str(p.emergency_phone, 40),
+    medical_conditions: keys(p.medical_conditions),
+    medications: str(p.medications, 300),
+    allergies: str(p.allergies, 300),
+    chemical_acks: keys(p.chemical_acks),
+    photos_record: p.photos_record === true,
+    photos_social: p.photos_social === true,
+    signature,
+  };
+  // signer_name (mig 026): el nombre tal como se firmó; tolera columna ausente
+  let res = await db
+    .from("client_consents")
+    .insert({ ...row, signer_name: str(signerName, 120) });
+  if (res.error && /signer_name/i.test(res.error.message)) {
+    res = await db.from("client_consents").insert(row);
+  }
+  if (res.error)
+    return { error: "Could not save the form — you can sign it at the salon" };
+  return { ok: true };
+}
+
 export async function createBooking(
   input: BookingInput
-): Promise<{ ok?: true; error?: string }> {
+): Promise<{ ok?: true; error?: string; consentToken?: string }> {
   // Honeypot: los bots rellenan el campo oculto
   if (input.website && input.website.trim() !== "") {
     return { ok: true }; // fingir éxito, no crear nada
@@ -277,7 +355,7 @@ export async function createBooking(
   const digits = phone.replace(/\D/g, "");
   const { data: allClients } = await db
     .from("clients")
-    .select("id, phone, email");
+    .select("id, full_name, phone, email");
 
   const phonesMatch = (a: string, b: string) => {
     if (a.length < 7 || b.length < 7) return false;
@@ -294,6 +372,14 @@ export async function createBooking(
           (c) => (c.email ?? "").toLowerCase() === email
         )
       : undefined);
+
+  // Si reservó con un nombre distinto al registrado, dejar rastro visible
+  // para el equipo en las notas de la cita (el match fue por teléfono)
+  const normName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+  const bookedAsNote =
+    match && match.full_name && normName(match.full_name) !== normName(name)
+      ? `Reservó como: ${name}`
+      : null;
 
   let clientId: string;
   if (match) {
@@ -334,6 +420,24 @@ export async function createBooking(
     };
   }
 
+  // El mismo cliente no puede tener dos citas activas a la misma hora
+  // (p. ej. reservar en línea mientras tiene un walk-in en curso)
+  const { data: clientAppts } = await db
+    .from("appointments")
+    .select("starts_at, duration_min")
+    .eq("client_id", clientId)
+    .in("status", ["scheduled", "confirmed", "in_progress"])
+    .gte("starts_at", new Date(starts.getTime() - 12 * 3600000).toISOString())
+    .lt("starts_at", ends.toISOString());
+  const selfOverlap = (clientAppts ?? []).some((a) => {
+    const aStart = new Date(a.starts_at);
+    const aEnd = new Date(aStart.getTime() + a.duration_min * 60000);
+    return starts < aEnd && aStart < ends;
+  });
+  if (selfOverlap) {
+    return { error: "You already have an appointment at that time" };
+  }
+
   // Comprobante de depósito (si la clienta adjuntó uno). No bloquea la reserva.
   const depositUrl = input.depositDataUrl
     ? await uploadDepositDataUrl(db, input.depositDataUrl)
@@ -350,11 +454,12 @@ export async function createBooking(
       duration_min: service.duration_min,
       price: service.price,
       status: "confirmed",
+      ...(bookedAsNote ? { notes: bookedAsNote } : {}),
       // Solo si hay comprobante: así la reserva no se rompe aunque la
       // migración 022 aún no se haya corrido.
       ...(depositUrl ? { deposit_url: depositUrl } : {}),
     })
-    .select("id")
+    .select("id, confirmation_token")
     .single();
   if (error || !created) return { error: "Could not create the appointment" };
 
@@ -367,5 +472,6 @@ export async function createBooking(
     // ignorar: el booking ya quedó guardado
   }
 
-  return { ok: true };
+  // El token permite firmar la ficha de consentimiento desde /book
+  return { ok: true, consentToken: created.confirmation_token as string };
 }

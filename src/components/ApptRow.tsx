@@ -11,14 +11,18 @@ export function ApptList({
   empty,
   showDate = false,
   canCharge = true,
+  noConsentIds = [],
 }: {
   appts: AppointmentFull[];
   empty: string;
   showDate?: boolean;
   canCharge?: boolean;
+  /** Citas sin ficha de consentimiento firmada → badge ✎ */
+  noConsentIds?: string[];
 }) {
   const [sel, setSel] = useState<AppointmentFull | null>(null);
   const { t } = useLang();
+  const noConsent = new Set(noConsentIds);
 
   if (appts.length === 0)
     return <div className="py-8 text-center text-[12.5px] text-faint">{empty}</div>;
@@ -54,6 +58,14 @@ export function ApptList({
             <div className="flex-1">
               <div className="text-[13.5px] font-medium">
                 {a.clients?.full_name ?? "Client"}
+                {noConsent.has(a.id) && (
+                  <span
+                    title={t("No signed consent form for this service")}
+                    className="ml-1.5 rounded-[10px] bg-[#fdf7e8] px-1.5 py-0.5 text-[10px] font-medium text-[#b0863c]"
+                  >
+                    ✎
+                  </span>
+                )}
               </div>
               <div className="text-[11px] text-muted">
                 {a.services?.name} · {a.profiles?.full_name?.split(" ")[0]}

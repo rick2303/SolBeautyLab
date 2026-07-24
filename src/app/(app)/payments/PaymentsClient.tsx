@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, createFreshClient } from "@/lib/supabase/client";
 import { Modal, Field, inputCls, PrimaryBtn, GhostBtn } from "@/components/ui/Modal";
 import { Pagination, PAGE_SIZE } from "@/components/ui/Pagination";
 import { useToast } from "@/components/ui/Toaster";
@@ -11,6 +11,7 @@ import {
   avatarFor,
   fmtDateShort,
   fmtMoney,
+  fmtTime,
   initialsOf,
   METHOD_CHIP,
   METHOD_LABEL,
@@ -25,8 +26,23 @@ interface PaymentRow {
   paid_at: string;
   staff_id: string | null;
   clients: { full_name: string } | null;
-  appointments: { services: { name: string } | null } | null;
+  appointments: {
+    staff_id: string | null;
+    services: { name: string } | null;
+    tech: { full_name: string } | null;
+  } | null;
   staff: { full_name: string } | null;
+}
+
+/** A quién le cuenta el ingreso: pago asignado > técnico de la cita */
+function techOf(p: PaymentRow): { id: string | null; name: string | null } {
+  if (p.staff_id) return { id: p.staff_id, name: p.staff?.full_name ?? null };
+  if (p.appointments?.staff_id)
+    return {
+      id: p.appointments.staff_id,
+      name: p.appointments.tech?.full_name ?? null,
+    };
+  return { id: null, name: null };
 }
 
 const METHODS: PaymentMethod[] = ["cash", "card", "zelle", "venmo", "transfer"];
@@ -113,9 +129,12 @@ export function PaymentsClient({
               </div>
               <div className="text-[11px] text-muted">
                 {p.appointments?.services?.name ?? "—"}
-                {p.staff && p.staff_id !== me.id && (
-                  <> · ✧ {p.staff.full_name}</>
-                )}
+                {(() => {
+                  const tech = techOf(p);
+                  return tech.name && tech.id !== me.id ? (
+                    <> · ✧ {tech.name}</>
+                  ) : null;
+                })()}
               </div>
             </div>
             <span
@@ -141,6 +160,11 @@ export function PaymentsClient({
           me={me}
           onClose={() => setOpen(false)}
           onAssignedToOther={(name, amount) => setNotice({ name, amount })}
+          onSaved={() => {
+            // El pago nuevo siempre queda en la primera página (orden por
+            // fecha desc); si no, el usuario cree que no se guardó
+            setPage(0);
+          }}
         />
       )}
       {notice && (
@@ -175,21 +199,85 @@ function RecordPaymentModal({
   me,
   onClose,
   onAssignedToOther,
+  onSaved,
 }: {
   clients: Pick<Client, "id" | "full_name">[];
   staff: Pick<Profile, "id" | "full_name">[];
   me: Profile;
   onClose: () => void;
   onAssignedToOther: (name: string, amount: number) => void;
+  onSaved: () => void;
 }) {
   const [clientId, setClientId] = useState(clients[0]?.id ?? "");
   const [staffId, setStaffId] = useState(me.id);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [saving, setSaving] = useState(false);
+  const [activeAppt, setActiveAppt] = useState<{
+    id: string;
+    starts_at: string;
+    price: number;
+    staff_id: string;
+    services: { name: string } | null;
+    profiles: { full_name: string } | null;
+  } | null>(null);
+  // ¿Este pago corresponde a la cita en curso? (desmarcar para propinas,
+  // productos u otros cobros que no deben completar la cita)
+  const [linkAppt, setLinkAppt] = useState(true);
+  const [apptHasConsent, setApptHasConsent] = useState(true);
   const toast = useToast();
   const router = useRouter();
   const { t } = useLang();
+
+  // ¿La clienta tiene una cita activa (empezada y sin completar)? Se vincula
+  // el pago a esa cita y al guardar se marca como completada — así el equipo
+  // no depende de ir al calendario a cambiar el estado.
+  useEffect(() => {
+    if (!clientId) {
+      setActiveAppt(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const supabase = createClient();
+        const { data } = await supabase
+          .from("appointments")
+          .select(
+            "id, starts_at, price, staff_id, services(name), profiles!staff_id(full_name)"
+          )
+          .eq("client_id", clientId)
+          .in("status", ["scheduled", "confirmed", "in_progress"])
+          .gte("starts_at", new Date(Date.now() - 12 * 3600000).toISOString())
+          .lte("starts_at", new Date(Date.now() + 15 * 60000).toISOString())
+          .order("starts_at", { ascending: false })
+          .limit(1);
+        if (cancelled) return;
+        const a = (data?.[0] as unknown as typeof activeAppt) ?? null;
+        setActiveAppt(a);
+        setLinkAppt(true);
+        if (a) {
+          // Precarga el técnico y el precio del servicio (editables)
+          setStaffId(a.staff_id);
+          setAmount((prev) => (prev.trim() ? prev : String(a.price)));
+          // ¿Esa cita ya tiene ficha firmada? (si la mig 025 falta, ignora)
+          const { data: cons } = await supabase
+            .from("client_consents")
+            .select("id")
+            .eq("appointment_id", a.id)
+            .limit(1);
+          if (!cancelled) setApptHasConsent((cons ?? []).length > 0);
+        }
+      } catch {
+        // Red intermitente (móvil): sin la cita activa el pago igual funciona
+        if (!cancelled) setActiveAppt(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId]);
 
   async function save() {
     const amt = parseFloat(amount.replace(/[^0-9.]/g, "")) || 0;
@@ -198,29 +286,56 @@ function RecordPaymentModal({
       return;
     }
     setSaving(true);
-    const supabase = createClient();
+    // Sesión garantizada fresca: en Android PWA el token puede llegar
+    // caducado tras estar en segundo plano y el insert fallaba
+    const supabase = await createFreshClient();
+    const linked = activeAppt && linkAppt ? activeAppt : null;
+    // Si el pago va ligado a la cita y el ingreso es para su técnico, se
+    // guarda SIN staff_id (la atribución sale de la cita): así quien lo
+    // registró lo sigue viendo y el botón "Cobrar" no reaparece (mig 023).
+    const storedStaffId = linked && staffId === linked.staff_id ? null : staffId;
     const { error } = await supabase.from("payments").insert({
       client_id: clientId,
       amount: amt,
       method,
       recorded_by: me.id,
-      staff_id: staffId,
+      staff_id: storedStaffId,
+      // Vincula el pago a la cita activa (así aparece el servicio en la lista)
+      ...(linked ? { appointment_id: linked.id } : {}),
     });
     setSaving(false);
     if (error) {
       toast(t("Could not save:") + " " + error.message);
       return;
     }
+    // Cierra el ciclo: la cita activa queda completada (y la visita cuenta)
+    let apptDone = false;
+    if (linked) {
+      const { error: upErr } = await supabase
+        .from("appointments")
+        .update({ status: "completed", updated_at: new Date().toISOString() })
+        .eq("id", linked.id);
+      if (upErr) {
+        toast(t("Couldn't update the appointment status:") + " " + upErr.message);
+      } else {
+        apptDone = true;
+      }
+    }
     // Si el pago quedó a nombre de otra persona y quien lo creó no es la
     // dueña, RLS se lo oculta de inmediato: en vez del toast normal se abre
     // un aviso con el nombre y el monto para que sepa que sí se guardó.
-    if (staffId !== me.id && me.role !== "owner") {
+    // (Solo aplica si de verdad se guardó staff_id: ligado a la cita del
+    // técnico, el pago sigue visible para quien lo registró.)
+    if (storedStaffId && storedStaffId !== me.id && me.role !== "owner") {
       const name =
         staff.find((s) => s.id === staffId)?.full_name ?? t("Staff");
       onAssignedToOther(name, amt);
+    } else if (apptDone) {
+      toast(`✓ ${t("Payment recorded")} · ${t("Appointment marked as completed")}`);
     } else {
       toast(t("Payment recorded"));
     }
+    onSaved();
     onClose();
     router.refresh();
   }
@@ -254,6 +369,35 @@ function RecordPaymentModal({
           ))}
         </select>
       </Field>
+      {activeAppt && (
+        <div className="rounded-[10px] border border-[#e4c97e] bg-[#fdf7e8] px-3.5 py-2.5 text-[11.5px] leading-relaxed text-[#8a6526]">
+          ◷ <b>{t("Appointment in progress")}</b>:{" "}
+          {activeAppt.services?.name ?? "—"} ·{" "}
+          {activeAppt.profiles?.full_name?.split(" ")[0]} ·{" "}
+          {fmtTime(activeAppt.starts_at)}
+          <label className="mt-1.5 flex cursor-pointer items-start gap-2">
+            <input
+              type="checkbox"
+              checked={linkAppt}
+              onChange={() => setLinkAppt(!linkAppt)}
+              className="mt-0.5 h-4 w-4 flex-none accent-[#b0863c]"
+            />
+            <span className="font-medium">
+              {t("This payment is for this appointment — mark it as completed")}
+            </span>
+          </label>
+          {!linkAppt && (
+            <div className="mt-1 text-[11px]">
+              {t("The appointment will stay as is (tips, products, other charges)")}
+            </div>
+          )}
+          {linkAppt && !apptHasConsent && (
+            <div className="mt-1 text-[11px] font-medium text-[#a05a5a]">
+              ✎ {t("This appointment has no signed consent form — ask for it before finishing")}
+            </div>
+          )}
+        </div>
+      )}
       <Field label={t("Income for")}>
         <select
           value={staffId}

@@ -29,7 +29,7 @@ export default async function PaymentsPage() {
       supabase
         .from("payments")
         .select(
-          "*, clients(full_name), appointments(services(name)), staff:profiles!staff_id(full_name)"
+          "*, clients(full_name), appointments(staff_id, services(name), tech:profiles!staff_id(full_name)), staff:profiles!staff_id(full_name)"
         )
         .order("paid_at", { ascending: false })
         .limit(500),
